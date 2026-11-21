@@ -3,6 +3,8 @@ import type { Ref } from 'react';
 const paths = {
   library: 'M3 5h18v13H3zM8 21h8m-4-3v3',
   camera: 'M3 7h4l2-3h6l2 3h4v13H3z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
+  gallery: 'M3 4h18v16H3z M4 17l5-6 3 3 3-4 6 6 M8.5 8h.01',
+  guide: 'M5 2.5h14v19H5z M8.5 7h7M8.5 11.5h7M8.5 16h4',
   family: 'M20.3 4.7a5.2 5.2 0 0 0-7.4.2l-.9 1-.9-1a5.2 5.2 0 0 0-7.4-.2c-2.2 2.1-2.1 5.6-.1 8L12 21l8.4-8.3c2-2.4 2.1-5.9-.1-8Z',
   arrow: 'M4 12h16m-6-6 6 6-6 6',
   open: 'M5 19 18 6M7 6h11v11',

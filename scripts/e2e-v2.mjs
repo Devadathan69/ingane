@@ -34,8 +34,7 @@ async function newPage(width, opts = {}) {
 
 async function start(page, lang = 'en') {
   await page.goto(`${BASE}?flow=remote&lang=${lang}`);
-  await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: lang === 'ml' ? 'തുടരുക' : 'Continue' }).click();
+  await page.getByTestId('gallery-input').waitFor({ state: 'attached' });
 }
 
 async function upload(page, file) {
@@ -52,6 +51,34 @@ async function ringMatchesImage(page, bbox) {
   }, bbox);
 }
 
+// Each entry opens a native chooser on a click. Cancelling or previewing never sends media.
+for (const [source, label] of [['camera','Take a photo of your remote'],['gallery','Choose from gallery']]) {
+  const { ctx, page } = await newPage(360);
+  const posts = [];
+  page.on('request', r => { if (r.method() === 'POST') posts.push(new URL(r.url()).pathname); });
+  await page.addInitScript(() => {
+    window.permissionRequests = 0;
+    navigator.mediaDevices.getUserMedia = async () => { window.permissionRequests++; throw new DOMException('Denied','NotAllowedError'); };
+  });
+  await page.goto(BASE+'?lang=en');
+  let opening = page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:label,exact:true}).click();
+  const cancelled = await opening;
+  check(source+' uses the expected chooser', await cancelled.element().getAttribute('capture') === (source === 'camera' ? 'environment' : null));
+  await cancelled.setFiles([]);
+  check(source+' cancellation stays on home with gallery available', await page.locator('.capture-gallery').isVisible());
+  opening=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:label,exact:true}).click();
+  await (await opening).setFiles(FX+'/practice.jpg');
+  await page.getByTestId('photo-preview').waitFor();
+  check(source+' enters the existing photo route',new URL(page.url()).searchParams.get('flow') === 'remote');
+  await page.getByRole('button',{name:'Use this photo'}).click();
+  await page.getByRole('textbox').fill('HOME');
+  check(source+' waits for consent and keeps permissions idle', posts.length === 0 && await page.evaluate(() => window.permissionRequests === 0) &&
+    await page.getByRole('button',{name:'Make my guide'}).isDisabled());
+  await ctx.close();
+}
+
 // 1. Happy path at two widths, Malayalam with Manglish typed input
 for (const width of [360, 430]) {
   const { ctx, page, errors } = await newPage(width);
@@ -64,6 +91,7 @@ for (const width of [360, 430]) {
   await start(page, 'ml');
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'ഈ ഫോട്ടോ മതി' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('TV il sound illa');
   await page.getByRole('button', { name: 'ഗൈഡ് ഉണ്ടാക്കുക' }).click();
   await page.waitForSelector('[data-testid=hotspot]');
@@ -101,6 +129,7 @@ for (const width of [360, 430]) {
   await start(page);
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('no sound');
   await page.getByRole('button', { name: 'Make my guide' }).click();
   await page.getByRole('button', { name: /My screen looks different/ }).click();
@@ -110,11 +139,17 @@ for (const width of [360, 430]) {
 
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('switch to HDMI 1');
   await page.getByRole('button', { name: 'Make my guide' }).click();
   await page.getByRole('heading', { name: 'One quick question' }).waitFor();
   check('HDMI without evidence → clarification, not a guide', guide.status === 'needs_clarification' && guide.steps.length === 0 && (await page.getByRole('button', { name: /I see it/ }).count()) === 0);
   await page.getByTestId('screen-input').setInputFiles(`${FX}/tv-screen.jpg`);
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  check('cancelling a local TV-screen preview keeps the clarification open',await page.locator('.question').isVisible());
+  await page.getByTestId('screen-input').setInputFiles(`${FX}/tv-screen.jpg`);
+  await page.getByRole('button',{name:'Send this screen photo for analysis'}).click();
   await page.getByText(/Is the outlined button/).waitFor();
   check('screen photo → asks to confirm the uncertain OK button', guide.clarification?.kind === 'confirm_button');
   await page.screenshot({ path: `${OUT}/confirm-button.png` });
@@ -135,6 +170,7 @@ for (const width of [360, 430]) {
 
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('set up wifi');
   await page.getByRole('button', { name: 'Make my guide' }).click();
   check('wifi → unsupported, no password request', /never ask for your Wi-Fi password/.test(await page.getByRole('alert').textContent()));
@@ -162,6 +198,7 @@ for (const width of [360, 430]) {
     await route.continue();
   });
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('no sound');
   await page.getByRole('button', { name: 'Make my guide' }).click();
   await page.waitForSelector('.instruction');
@@ -177,6 +214,7 @@ for (const width of [360, 430]) {
 
   await upload(page, `${FX}/landscape.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('go home');
   await page.getByRole('button', { name: 'Make my guide' }).click();
   await page.waitForSelector('[data-testid=hotspot]');
@@ -197,6 +235,7 @@ for (const width of [360, 430]) {
   await start(page, 'ml');
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'ഈ ഫോട്ടോ മതി' }).click();
+  await page.getByRole('checkbox').check();
   const mic = page.getByRole('button', { name: /അമർത്തിപ്പിടിച്ച് പറയുക/ });
   await mic.focus();
   await page.keyboard.press('Enter');
@@ -216,6 +255,7 @@ for (const width of [360, 430]) {
   await start(page);
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: /Hold to talk/ }).focus();
   await page.keyboard.press('Enter');
   check('mic denied (simulated) → message', await page.getByText(/Microphone is blocked/).isVisible());
@@ -237,9 +277,10 @@ for (const width of [360, 430]) {
   await start(page);
   await upload(page, `${FX}/practice.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
+  await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('no sound');
   await page.getByRole('button', { name: 'Make my guide' }).click();
-  check('provider timeout → readable error', /taking too long/.test(await page.getByRole('alert').textContent()));
+  check('provider timeout → photo and request available for retry', /photo and request are still here/.test(await page.getByRole('alert').textContent()));
   await page.getByRole('button', { name: 'Try again' }).click();
   check('retry recovers', await page.locator('.instruction').waitFor().then(() => true, () => false));
   await ctx.close();

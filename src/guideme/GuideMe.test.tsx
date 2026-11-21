@@ -132,30 +132,29 @@ describe('StepPlayer with narration', () => {
 
 async function toTaskStep(user: ReturnType<typeof userEvent.setup>, locale: 'en' | 'ml' = 'en') {
   const g = GM_STRINGS[locale];
-  await screen.findByRole('checkbox');
-  await user.click(screen.getByRole('checkbox'));
-  await user.click(screen.getByRole('button', { name: g.continue }));
   const input = screen.getByTestId('gallery-input') as HTMLInputElement;
   await user.upload(input, new File(['x'], 'remote.jpg', { type: 'image/jpeg' }));
   await user.click(await screen.findByRole('button', { name: g.usePhoto }));
+  await user.click(await screen.findByRole('checkbox'));
 }
 
 describe('GuideMe flow', () => {
   it('explains when the server is not reachable (static V1 host)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
-    render(<GuideMe locale="en" onLocale={() => {}} />);
+    render(<GuideMe locale="en" />);
     expect((await screen.findByRole('alert')).textContent).toMatch(/Live guides need the Ingane server/);
   });
 
   it('can retry a reachable server after photo guidance has been configured', async () => {
     const health = { ok: true, guide: false, speech: false, demo: false };
     vi.stubGlobal('fetch', vi.fn(async () => json(health)));
-    render(<GuideMe locale="en" onLocale={() => {}} />);
+    render(<GuideMe locale="en" />);
     expect((await screen.findByRole('alert')).textContent).toBe(GM_STRINGS.en.guideUnconfigured);
     expect(screen.getByRole('link', { name: GM_STRINGS.en.readyMade })).toBeTruthy();
     health.guide = true;
     await userEvent.click(screen.getByRole('button', { name: GM_STRINGS.en.tryAgain }));
-    expect(await screen.findByRole('checkbox')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.getByTestId('camera-input')).toBeTruthy();
   });
 
   it.each(['en', 'ml'] as const)('supports typed photo guides with only OpenAI configured (%s)', async (locale) => {
@@ -171,10 +170,10 @@ describe('GuideMe flow', () => {
       return json(result({ demo: false, locale }));
     });
     vi.stubGlobal('fetch', fetchMock);
-    render(<GuideMe locale={locale} onLocale={() => {}} />);
-    expect(await screen.findByText(g.consentBody)).toBeTruthy();
-    expect(screen.queryByText(g.consentVoice)).toBeNull();
+    render(<GuideMe locale={locale} />);
     await toTaskStep(user, locale);
+    expect(screen.getByText(g.consentBody)).toBeTruthy();
+    expect(screen.queryByText(g.consentVoice)).toBeNull();
     expect(screen.queryByRole('button', { name: g.holdToTalk })).toBeNull();
     expect(screen.getByText(g.typeOnly)).toBeTruthy();
     await user.type(screen.getByRole('textbox'), 'HOME');
@@ -191,10 +190,14 @@ describe('GuideMe flow', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('MediaRecorder', class { static isTypeSupported = () => true; });
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => { throw new DOMException('denied', 'NotAllowedError'); }) } });
-    render(<GuideMe locale="en" onLocale={() => {}} />);
-    await screen.findByRole('checkbox');
-    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
-    await toTaskStep(user);
+    render(<GuideMe locale="en" />);
+    await user.upload(screen.getByTestId('camera-input'), new File(['x'], 'remote.jpg', { type: 'image/jpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Use this photo' }));
+    await user.type(screen.getByRole('textbox'), 'HOME');
+    expect((screen.getByRole('button', { name: 'Make my guide' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['api/health']);
+    await user.clear(screen.getByRole('textbox'));
+    await user.click(screen.getByRole('checkbox'));
     await user.keyboard('{Tab}');
     screen.getByRole('button', { name: /Hold to talk/ }).focus();
     await user.keyboard('{Enter}');
@@ -218,7 +221,7 @@ describe('GuideMe flow', () => {
       bodies.push(init!.body as FormData);
       return json(bodies.length === 1 ? clar : result());
     }));
-    render(<GuideMe locale="en" onLocale={() => {}} />);
+    render(<GuideMe locale="en" />);
     await toTaskStep(user);
     await user.type(screen.getByRole('textbox'), 'switch to HDMI');
     await user.click(screen.getByRole('button', { name: 'Make my guide' }));
@@ -229,16 +232,28 @@ describe('GuideMe flow', () => {
     expect(JSON.parse(bodies[1].get('answers') as string).confirmedControlIds).toEqual(['mute']);
   });
 
-  it('shows provider errors with retry', async () => {
+  it.each(['service', 'gateway'])('retries a %s timeout with the same photo and request', async source => {
     const user = userEvent.setup();
-    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
-      url.includes('health') ? json({ ok: true, guide: true, speech: true, demo: false }) : json({ error: 'timeout', message: 'This is taking too long. Please try again.' }, 504),
-    ));
-    render(<GuideMe locale="en" onLocale={() => {}} />);
+    const attempts: FormData[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('health')) return json({ ok: true, guide: true, speech: true, demo: false });
+      attempts.push(init?.body as FormData);
+      if (attempts.length > 1) return json(result());
+      return source === 'service' ? json({ error: 'timeout' }, 504) : new Response('Timed out', { status: 504 });
+    }));
+    render(<GuideMe locale="en" />);
     await toTaskStep(user);
     await user.type(screen.getByRole('textbox'), 'no sound');
     await user.click(screen.getByRole('button', { name: 'Make my guide' }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/taking too long/);
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    await screen.findByRole('heading', { name: 'The guide took too long' });
+    expect(screen.getByRole('alert').textContent).toContain('Your photo and request are still here');
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText('Press Mute once.');
+    expect(attempts).toHaveLength(2);
+    for (const sent of attempts) {
+      expect(sent.get('request')).toBe('no sound');
+      expect(sent.get('consent')).toBe('true');
+      expect(sent.get('image')).toMatchObject({ type: 'image/jpeg', size: 1 });
+    }
   });
 });

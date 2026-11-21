@@ -17,7 +17,8 @@ const guide: FamilyGuide = { version: 1, locale: 'ml', title: 'Amma, switch to H
     { id: 'input', label: 'ഇൻപുട്ട്', box: { x: 123 / 315, y: 170 / 1365, w: 67 / 315, h: 48 / 1365 } },
     { id: 'unused', label: 'draft-only control', box: { x: .1, y: .1, w: .1, h: .1 } },
   ], steps: [{ id: 'one', kind: 'button', controlId: 'input', screenLabel: 'HDMI 2', instruction: 'ഇൻപുട്ട് അമർത്തുക.',
-    expected: 'ലിസ്റ്റ് കാണുന്നുണ്ടോ?', recovery: 'റിമോട്ട് വീണ്ടും നോക്കുക.', audioLocale: 'ml' }],
+    expected: 'ലിസ്റ്റ് കാണുന്നുണ്ടോ?', recovery: 'റിമോട്ട് വീണ്ടും നോക്കുക.', audioLocale: 'ml',
+    audioReview: { instruction: 'ഇൻപുട്ട് അമർത്തുക.', screenLabel: 'HDMI 2' } }],
 };
 const id = 'f'.repeat(32);
 const key = () => randomBytes(32).toString('base64url');
@@ -53,6 +54,28 @@ describe('Family Guides', () => {
     g.nickname = 'name@example.invalid';
     expect(familyIssues(g, false, false).map(i => i.code)).toContain('contact');
     expect(() => makeFamilySnapshot(g, false)).toThrow();
+  });
+
+  it('omits stale and legacy clips from preview and rejects them as uploads, while keeping the written snapshot shareable', async () => {
+    const { db, alice, call, form } = setup();
+    try {
+      for (const change of ['instruction','screenLabel','locale','legacy'] as const) {
+        const edited = structuredClone(guide);
+        if (change === 'locale') edited.locale = 'ta';
+        else if (change === 'legacy') delete edited.steps[0].audioReview;
+        else edited.steps[0][change] += ' 2';
+        expect(makeFamilySnapshot(edited,true).steps[0].hasAudio).toBe(false);
+        expect((await call('/owner/publish',alice,form(edited))).status).toBe(422);
+      }
+      const draft = structuredClone(guide);
+      draft.steps[0].audioReview = null;
+      const f = form(draft); f.delete('clip-one');
+      const published = await call('/owner/publish',alice,f);
+      expect(published.status).toBe(201);
+      const { token } = await published.json() as {token:string};
+      expect((await (await call('/view',token)).json()).steps[0].hasAudio).toBe(false);
+      expect((await call('/clip/one',token)).status).toBe(404);
+    } finally { db.close(); }
   });
 
   it('validates image dimensions and bytes, removes metadata, and measures WAV duration from samples', () => {

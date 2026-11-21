@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { guideLanguages } from './languages';
 
 /** Shared V2 contract between server and client. The client only imports types from here. */
 
-export const LOCALE = z.enum(['ml', 'en']);
+export const LOCALE = z.enum(guideLanguages);
 export type GuideLocale = z.infer<typeof LOCALE>;
 
 export const TASK_TYPES = ['restore_sound', 'go_home', 'switch_hdmi', 'wifi', 'other'] as const;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { familyIssues, makeFamilySnapshot, type FamilyIssue } from '../../shared/family';
+import { languages } from '../../shared/languages';
+import { familyIssues, makeFamilySnapshot, type FamilyIssue, type FamilyStep } from '../../shared/family';
 import type { Locale } from '../data/types';
 import { blankDraft, draftFromSeed, type DraftChange, type FamilyDraft, type FamilySeed } from './draft';
 import { Editor } from './Editor';
@@ -8,7 +9,7 @@ import { deleteDraft, listDrafts, saveDraft } from './storage';
 import { FAMILY } from './strings';
 import './family.css';
 import { SharePanel, useFamilySharing } from './Sharing';
-import { Narration } from './Narration';
+import { GuideNarration, Narration } from './Narration';
 import { FlowHeading, Icon } from '../ui/Icon';
 
 export function FamilyGuides({ locale, seed }: { locale: Locale; seed: FamilySeed | null }) {
@@ -26,6 +27,7 @@ export function FamilyGuides({ locale, seed }: { locale: Locale; seed: FamilySee
   const [remove, setRemove] = useState('');
   const [leaving, setLeaving] = useState(false);
   const [review, setReview] = useState(false);
+  const [narrating, setNarrating] = useState(false);
   useEffect(() => {
     let active = true;
     listDrafts().then(rows => { if (active) setItems(rows); }).catch(() => { if (active) setNotice(s.failed); });
@@ -63,23 +65,30 @@ export function FamilyGuides({ locale, seed }: { locale: Locale; seed: FamilySee
     } catch (err) { setNotice(err instanceof Error && err.message === 'conflict' ? s.conflict : s.failed); }
     finally { setBusy(false); }
   };
+  const acceptClip = (step: FamilyStep, blob: Blob | null, keepExisting = false) => {
+    if (!draft) return;
+    const language = draft.guide.locale;
+    setDraft(prev => {
+      const target = prev?.guide.steps.find(s => s.id === step.id);
+      if (!prev || prev.id !== draft.id || prev.guide.locale !== language || !target || (keepExisting && prev.clips[step.id]) ||
+          target.instruction !== step.instruction || target.screenLabel !== step.screenLabel) return prev;
+      const clips = { ...prev.clips };
+      if (blob) clips[step.id] = blob; else delete clips[step.id];
+      return { ...prev, clips, guide: { ...prev.guide, steps: prev.guide.steps.map(s =>
+        s.id === step.id ? { ...s, audioLocale: blob ? language : null, audioReview: blob ? { instruction: s.instruction, screenLabel: s.screenLabel } : null } : s) } };
+    });
+    setDirty(true); setNotice('');
+  };
   if (preview && draft?.photo) return <FamilyPlayer snapshot={makeFamilySnapshot(draft.guide, true)} photo={draft.photo}
-    audio={async id => draft.clips[id]} footer={<button className="btn btn-secondary wide" onClick={() => setPreview(false)}>{s.backEdit}</button>} />;
+    audio={async id => draft.clips[id]} footer={<button lang={locale} className="btn btn-secondary wide" onClick={() => setPreview(false)}>{s.backEdit}</button>} />;
   if (draft) return <>
     <Editor draft={draft} locale={locale} update={update} issues={issues} notice={notice} busy={busy} review={review}
-      narration={step => <Narration key={step.id + draft.guide.locale} step={step} locale={locale} language={draft.guide.locale}
-        clip={draft.clips[step.id]} accessKey={sharing.key} live={sharing.caps.sarvam} onClip={blob => {
-          const language = draft.guide.locale;
-          setDraft(prev => {
-            if (!prev || prev.id !== draft.id || !prev.guide.steps.some(s => s.id === step.id)) return prev;
-            const clips = { ...prev.clips };
-            if (blob) clips[step.id] = blob; else delete clips[step.id];
-            return { ...prev, clips, guide: { ...prev.guide, steps: prev.guide.steps.map(s =>
-              s.id === step.id ? { ...s, audioLocale: blob ? language : null } : s) } };
-          });
-          setDirty(true); setNotice('');
-        }} />}
-      sharing={<SharePanel model={sharing} draft={draft} locale={locale} validate={() => {
+      narration={step => <Narration key={JSON.stringify([step.id, draft.guide.locale, step.instruction, step.screenLabel])} step={step} locale={locale} language={draft.guide.locale}
+        clip={draft.clips[step.id]} accessKey={sharing.key} live={sharing.caps.sarvam && languages[draft.guide.locale].tts} onClip={blob => acceptClip(step,blob)} />}
+      sharing={<SharePanel model={sharing} draft={draft} locale={locale} narrating={narrating}
+        narration={sharing.caps.sarvam && languages[draft.guide.locale].tts && <GuideNarration key={draft.id + draft.guide.locale}
+          draft={draft} locale={locale} accessKey={sharing.key} onClip={(step,blob) => acceptClip(step,blob,true)} setWorking={setNarrating} />}
+        validate={() => {
         const errors = familyIssues(draft.guide, !!draft.photo); setIssues(errors); return !errors.length;
       }} />}
       onSave={() => void save()} onList={() => dirty ? setLeaving(true) : list()} onPreview={() => {
@@ -91,8 +100,9 @@ export function FamilyGuides({ locale, seed }: { locale: Locale; seed: FamilySee
   return <main className="flow family">
     <FlowHeading icon="family" title={s.hub} description={s.local} />
     <div className="family-starts">
-      <button className="btn btn-primary" disabled={busy} onClick={() => open(blankDraft(locale))}><Icon name="camera" />{s.manual}</button>
+      <a className="btn btn-primary" href={`?flow=remote&lang=${locale}`}><Icon name="camera" />{s.fromAI}</a>
       <a className="btn btn-secondary" href={`?flow=presets&lang=${locale}`}><Icon name="library" />{s.fromPreset}</a>
+      <button className="btn btn-secondary" disabled={busy} onClick={() => open(blankDraft(locale))}><Icon name="camera" />{s.manual}</button>
     </div>
     <section className="stack draft-shelf" aria-label={s.drafts}><h2>{s.drafts}</h2>
       {busy && <p role="status">{s.wait}</p>}

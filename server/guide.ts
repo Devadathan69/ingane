@@ -17,7 +17,7 @@ import { validateGuideResult } from './validate';
 const DPAD: ControlRole[] = ['nav_ring', 'ok', 'up', 'down', 'left', 'right'];
 const OVERLAP_LIMIT = 0.35;
 
-/** Derived observations only (never raw photos), keyed by image hash, short-lived. */
+/** Short-lived button observations for one photo and task. Keys contain only hashes. */
 export class VisionCache {
   private map = new Map<string, { obs: RemoteObservation; at: number }>();
   constructor(private ttlMs = 15 * 60_000, private max = 100) {}
@@ -98,10 +98,13 @@ export function needsConfirmation(c: ObservedControl, all: ObservedControl[], an
 export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<GuideResult> {
   const { locale, answers } = input;
   const msg = MESSAGES[locale];
-  const key = createHash('sha256').update(input.image.bytes).digest('hex');
+  const task = input.request.trim();
+  const imageHash = createHash('sha256').update(input.image.bytes).digest('hex');
+  const taskHash = createHash('sha256').update(task).digest('hex');
+  const key = imageHash + ':' + taskHash;
   let obs = deps.cache.get(key);
   if (!obs) {
-    obs = await deps.providers.analyzeRemote(input.image, deps.signal);
+    obs = await deps.providers.analyzeRemote(input.image, deps.signal, task);
     deps.cache.set(key, obs);
   }
 

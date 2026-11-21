@@ -37,3 +37,11 @@
   .family-details { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
   .family-details > :is(h2,.family-photo,.warn-box), .family-details > label:has(textarea) { grid-column: 1 / -1; }
 }
+
+.editor-actions { position: sticky; top: 0; z-index: 4; display: flex; gap: 8px; padding: 8px 0; background: var(--paper, #f6f3e9); }
+.editor-actions .btn { flex: 1; min-height: 48px; }
+.family :is(input,select,textarea,button,summary) { scroll-margin-block: 82px 16px; }
+.family:has(:is(input,select,textarea):focus) .editor-actions { position: static; }
+.family-issues button { background: none; color: inherit; font: inherit; padding: 4px; border: 0; text-align: start; text-decoration: underline; min-height: 48px; }
+.family-extra, #guide-lang-hint { grid-column: 1 / -1; }
+.family-extra summary, .family-step summary { color: var(--brand); }

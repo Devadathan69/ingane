@@ -1,3 +1,4 @@
+import { extraGuideCopy } from '../guide-languages';
 import type { GuideLocale } from '../../shared/guide';
 import {
   ProviderError,
@@ -29,6 +30,7 @@ export const MOCK_CONTROLS: VisionControl[] = [
 ];
 
 const T = {
+  ...extraGuideCopy,
   ml: {
     mute: ['നിശബ്ദ (crossed-out speaker) ബട്ടൺ ഒരു തവണ അമർത്തുക.', 'ടിവിയിൽ ശബ്ദം തിരികെ വരും; സ്പീക്കർ ചിഹ്നം മാറും.', 'ശബ്ദം ഇപ്പോഴും ഇല്ലെങ്കിൽ, അടുത്ത ഘട്ടത്തിൽ Volume + ഉപയോഗിക്കാം. മറ്റു ബട്ടണുകൾ അമർത്തരുത്.'],
     vol: ['+ (Volume) ബട്ടൺ ഒരു തവണ അമർത്തുക, എന്നിട്ട് ടിവി നോക്കുക.', 'ടിവിയിൽ വോളിയം ബാർ കാണും, ശബ്ദം കൂടും.', 'ഒന്നും കാണുന്നില്ലെങ്കിൽ, റിമോട്ട് ടിവിക്ക് നേരെ പിടിച്ച് വീണ്ടും ഒരു തവണ അമർത്തുക.'],
@@ -65,8 +67,8 @@ export function mockTaskType(request: string) {
   const r = request.toLowerCase();
   if (/wi-?fi|വൈഫൈ|password/.test(r)) return 'wifi' as const;
   if (/hdmi|input|source|ഇൻപുട്ട്/.test(r)) return 'switch_hdmi' as const;
-  if (/home|ഹോം|veed|വീട്/.test(r)) return 'go_home' as const;
-  if (/sound|volume|mute|sabd|shabd|ശബ്ദ|ഒച്ച|ocha/.test(r)) return 'restore_sound' as const;
+  if (/home|ഹോം|veed|വീട്|होम|முகப்பு|ಮುಖಪುಟ|హోమ్/.test(r)) return 'go_home' as const;
+  if (/sound|volume|mute|sabd|shabd|ശബ്ദ|ഒച്ച|ocha|आवाज़|आवाज|ஒலி|சத்தம்|ಧ್ವನಿ|ಶಬ್ದ|ధ్వని|శబ్దం/.test(r)) return 'restore_sound' as const;
   return 'other' as const;
 }
 
@@ -83,7 +85,8 @@ function mockPlan(input: PlannerInput): PlannerOutput {
   }
   if (type === 'go_home') return { ...base, taskSummary: t.goHome, decision: 'ready', evidenceRefIds: ['generic-home'], steps: [step('s1', byRole('home') ?? 'home', null, t.home)] };
   if (type === 'switch_hdmi') {
-    const label = input.screen?.labels.find((l) => /hdmi/i.test(l));
+    const requested = input.request.match(/HDMI\s*(\d+)/i)?.[1];
+    const label = input.screen?.labels.find(l => requested ? l.toUpperCase() === 'HDMI ' + requested : /hdmi/i.test(l));
     if (!label) return { ...base, taskSummary: t.hdmi, decision: 'needs_clarification', clarification: { kind: 'screen_photo', question: t.hdmiQ, controlId: null } };
     return {
       ...base,
@@ -148,7 +151,9 @@ export function createMockSpeechProviders(failure?: () => MockFailure | undefine
     async transcribe(_audio, locale: GuideLocale) {
       const f = failure?.();
       if (f === 'timeout' || f === 'unavailable') throw new ProviderError(f, `mock ${f}`);
-      return locale === 'ml' ? 'ടിവിയിൽ ശബ്ദം ഇല്ല, sound തിരികെ വേണം' : 'The TV has no sound';
+      if (locale === 'ml') return 'ടിവിയിൽ ശബ്ദം ഇല്ല, sound തിരികെ വേണം';
+      if (locale === 'en') return 'The TV has no sound';
+      return extraGuideCopy[locale].home[0];
     },
     async synthesize() {
       const f = failure?.();

@@ -65,7 +65,7 @@ export interface PlannerInput {
 
 export interface GuideProviders {
   name: 'live' | 'mock';
-  analyzeRemote(img: NormalizedImage, signal: AbortSignal): Promise<RemoteObservation>;
+  analyzeRemote(img: NormalizedImage, signal: AbortSignal, request?: string): Promise<RemoteObservation>;
   analyzeScreen(img: NormalizedImage, signal: AbortSignal): Promise<ScreenObservation>;
   plan(input: PlannerInput, signal: AbortSignal): Promise<PlannerOutput>;
 }

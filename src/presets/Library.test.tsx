@@ -22,8 +22,8 @@ describe('ready-made guide selection', () => {
   it('offers both entries on the home page and opens the verified collection first', async () => {
     const user = userEvent.setup();
     mountApp('');
-    expect(screen.getByRole('link', { name: /Ready-made guides/ }).getAttribute('href')).toBe('?flow=presets&lang=en');
-    expect(screen.getByRole('link', { name: /Guide me with my remote/ }).getAttribute('href')).toBe('?flow=remote&lang=en');
+    expect(screen.getByRole('link', { name: 'Ready-made guides' }).getAttribute('href')).toBe('?flow=presets&lang=en');
+    expect(screen.getByRole('button', { name: 'Take a photo of your remote' })).toBeTruthy();
     cleanup();
     mountApp();
     expect(screen.getByText(/no device-verified guides yet/)).toBeTruthy();
@@ -54,7 +54,7 @@ describe('ready-made guide selection', () => {
     fireEvent.change(search, { target: { value: ' demo-tv-01 ' } });
     await user.click(button(/DEMO-TV-01/));
     expect(screen.getByText(/battery compartment/)).toBeTruthy();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task' })).toBeNull();
     await user.click(button(/My remote matches/));
     await user.selectOptions(screen.getByLabelText('Task'), 'demo-hdmi');
     expect((button('Start guide') as HTMLButtonElement).disabled).toBe(true);
@@ -71,7 +71,7 @@ describe('ready-made guide selection', () => {
     await user.click(button('My screen looks different'));
     await user.click(button('Recheck my TV model'));
     expect(screen.getByRole('heading', { name: 'Choose your TV model' })).toBeTruthy();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task' })).toBeNull();
     expect(fetch.mock.calls.map(call => call[0])).toEqual(['api/health']);
   });
 
@@ -109,12 +109,12 @@ describe('ready-made guide selection', () => {
       steps: [{ ...mute.steps[0], controlId: 'topMute' }],
     });
     const user = userEvent.setup();
-    render(<Library registry={registry} locale="en" onLocale={() => {}} />);
+    render(<Library registry={registry} locale="en" />);
     await user.click(button('Try the demo'));
     await user.type(screen.getByRole('searchbox'), 'DEMO-R01');
     await user.click(button(/DEMO-TV-01/));
     expect(screen.getByText(/Several layouts fit/)).toBeTruthy();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Task' })).toBeNull();
     const pictures = screen.getAllByRole('img');
     expect(pictures).toHaveLength(2);
     fireEvent.error(pictures[0]);

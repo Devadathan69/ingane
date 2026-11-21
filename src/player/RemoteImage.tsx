@@ -1,9 +1,12 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEvent, type RefObject } from 'react';
 import type { Hotspot } from '../data';
+import { hdmiDemo } from '../data/presets/catalog';
+import { presetRegistry } from '../data/presets/registry';
 import { hotspotStyle, isPressTarget, PressCue } from './PressCue';
 import { ButtonCallout, StageBackdrop } from '../ui/PhotoStage';
 export { hotspotStyle } from './PressCue';
 
+const practiceImage = hdmiDemo(presetRegistry)?.entry.remote.asset.src;
 const preference = '(prefers-reduced-motion: reduce)';
 const reduced = () => window.matchMedia?.(preference).matches ?? true;
 function watchMotion(change: () => void) {
@@ -19,7 +22,7 @@ interface Props {
   height: number;
   alt: string;
   hotspot?: Hotspot;
-  scrollStepId?: string;
+  stepId?: string;
   failedText: string;
   hint: string;
   /** CSS width of the image frame. V1 remotes are narrow (260px cap); user photos use the full width. */
@@ -35,7 +38,7 @@ interface Props {
   };
 }
 
-export function RemoteImage({ src, width, height, alt, hotspot, scrollStepId, failedText, hint, frameWidth = 'min(100%, 260px)', onTap, ringStyle = 'guide', stage }: Props) {
+export function RemoteImage({ src, width, height, alt, hotspot, stepId, failedText, hint, frameWidth = 'min(100%, 260px)', onTap, ringStyle = 'guide', stage }: Props) {
   const localViewport = useRef<HTMLDivElement>(null);
   const viewport = stage?.viewport ?? localViewport;
   const frame = useRef<HTMLDivElement>(null);
@@ -102,9 +105,10 @@ export function RemoteImage({ src, width, height, alt, hotspot, scrollStepId, fa
     const vp = viewport.current;
     const el = img.current;
     if (introduced || !vp || !el || status !== 'loaded' || !hotspot) return;
-    const centre = el.offsetTop + el.offsetHeight * (hotspot.y + hotspot.h / 2);
-    vp.scrollTop = Math.max(0, centre - vp.clientHeight / 2);
-  }, [hotspot, scrollStepId, status, src, introduced, viewport]);
+    const rect = el.getBoundingClientRect();
+    const centre = rect.top + rect.height * (hotspot.y + hotspot.h / 2);
+    vp.scrollTop += centre - vp.getBoundingClientRect().top - vp.clientHeight / 2;
+  }, [stepId, hotspot, status, src, introduced, viewport]);
 
   const usable = isPressTarget(hotspot) && status === 'loaded' && img.current?.naturalWidth === width && img.current?.naturalHeight === height;
   const onTarget = stage?.onTarget;
@@ -125,7 +129,7 @@ export function RemoteImage({ src, width, height, alt, hotspot, scrollStepId, fa
   };
 
   const fit = Math.min((size.w - 32) / width, (size.h - 16) / height);
-  const practicePhoto = !!stage && src === 'devices/coolux-practice.jpg';
+  const practicePhoto = !!stage && src === practiceImage;
   const detail = usable && size.w > 0 && (view ? view === 'detail' : !practicePhoto && height > width * 1.6 && width * fit < 110);
   let frameStyle: CSSProperties = stage ? { '--photo-ratio': width / height } as CSSProperties : { width: frameWidth };
   if (detail) {

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
-import type { Hotspot, Locale } from '../data';
+import type { Hotspot } from '../data';
+import type { GuideLanguage } from '../../shared/languages';
 import type { Strings } from '../i18n';
 import { progressReducer, START } from './progress';
 import { RemoteImage, useReducedMotion } from './RemoteImage';
@@ -32,7 +33,7 @@ export interface StepPlayerProps {
   before?: string;
   steps: PlayerStep[];
   image: { src: string; width: number; height: number; alt: string; frameWidth?: string };
-  locale: Locale;
+  locale: GuideLanguage;
   t: Strings;
   labels?: { yes?: string; no?: string };
   /** On-demand narration (V2). Returns a playable URL; callers cache per session. */
@@ -161,8 +162,8 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
       height={image.height}
       alt={image.alt}
       frameWidth={image.frameWidth}
+      stepId={step.id}
       hotspot={legacy || step.button?.trim() ? step.hotspot : undefined}
-      scrollStepId={legacy ? step.id : undefined}
       stage={legacy ? undefined : { stepId: step.id, paused: state.mismatch, introduced,
         neighbours: controls ?? steps.flatMap(s => s.hotspot ? [s.hotspot] : []),
         label: t.remoteView, button: step.button, callout: step.photoLabel ?? step.button, full: t.fullRemote, detail: t.buttonDetail,

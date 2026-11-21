@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17392f">
+  <title>Watch the Ingane walkthrough</title>
+  <link rel="icon" href="/ingane.svg">
+  <style>
+    :root { color-scheme: dark; font: 100%/1.5 system-ui, sans-serif; background: #17392f; color: #faf5e6; }
+    body { max-width: 68rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+    a { color: #ffda80; text-underline-offset: .18em; }
+    a:focus-visible { outline: 3px solid #ffda80; outline-offset: 4px; }
+    h1 { margin: 1.1rem 0 .8rem; font-size: clamp(1.5rem, 4vw, 2.5rem); }
+    video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #102b22; border-radius: 1rem; }
+    footer { display: flex; flex-wrap: wrap; gap: .5rem 2rem; margin-top: 1rem; }
+    a { display: inline-flex; align-items: center; min-height: 48px; }
+  </style>
+</head>
+<body>
+  <main>
+    <a href="/?lang=en">← Ingane</a>
+    <h1>Amma, switch to HDMI 2</h1>
+    <video controls playsinline preload="metadata" poster="/demo/demo-poster.jpg" aria-label="Ingane walkthrough with a Malayalam narration sample">
+      <source src="/demo/ingane-demo.mp4" type="video/mp4">
+      <track kind="captions" srclang="en" label="English" src="/demo/ingane-demo.en.vtt">
+      <a href="/demo/ingane-demo.mp4">Download the video</a>
+    </video>
+    <footer>
+      <a href="/?flow=presets&amp;demo=hdmi-2&amp;lang=ml">Try the HDMI 2 practice guide →</a>
+      <a href="/demo/ingane-demo.mp4" download>Download the video</a>
+      <a href="/photo-credit.txt">Practice photo credit</a>
+    </footer>
+  </main>
+</body>
+</html>

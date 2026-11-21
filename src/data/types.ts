@@ -1,5 +1,6 @@
-export type Locale = 'ml' | 'en';
-export const LOCALES: readonly Locale[] = ['ml', 'en'];
+export type { UiLocale as Locale } from '../../shared/languages';
+export { uiLanguages as LOCALES } from '../../shared/languages';
+import type { UiLocale as Locale } from '../../shared/languages';
 
 export type LocalizedText = Record<Locale, string>;
 

@@ -38,8 +38,8 @@ for (const [lang, text] of Object.entries(SAMPLES) as [keyof typeof SAMPLES, str
       writeFileSync(`tmp/voices/${name}.wav`, Buffer.from(b64, 'base64'));
       console.log(`PASS  ${name}`);
     } catch (err) {
-      const e = err as { statusCode?: number };
-      console.log(`FAIL  ${name}  (HTTP ${e.statusCode ?? 'unavailable'})`);
+      const e = err as { statusCode?: number; message?: string };
+      console.log(`FAIL  ${name}  (${e.statusCode ?? ''} ${String(e.message ?? err).slice(0, 160)})`);
     }
   }
 }

@@ -1,9 +1,17 @@
 import { existsSync, mkdirSync, realpathSync, statSync, chmodSync, lstatSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { SpeechProviders } from '../providers/types';
-import { FamilyStore } from './store';
+import { FamilyStore, type FamilyRepository } from './store';
+import type { PgFamilyStore } from './postgres';
+import type { CreatorAuth } from './passkeys';
 
-export interface FamilyConfig { store: FamilyStore | null; creators: Map<string, string>; speech: SpeechProviders | null }
+export interface FamilyConfig {
+  store: FamilyRepository | null;
+  creators: Map<string, string>;
+  speech: SpeechProviders | null;
+  uploads?: PgFamilyStore;
+  auth?: CreatorAuth;
+}
 const inside = (path: string, root: string) => {
   const r = relative(root, path);
   return r === '' || (!r.startsWith('..' + sep) && r !== '..' && !isAbsolute(r));

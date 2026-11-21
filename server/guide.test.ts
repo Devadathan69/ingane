@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GuideResult, MALAYALAM_SCRIPT, type ClarificationAnswers, type GuideResult as Result } from '../shared/guide';
 import { buildGuide, needsConfirmation, VisionCache, verifyNarrationToken } from './guide';
 import { createMockGuideProviders, type MockFailure } from './providers/mock';
@@ -23,6 +23,23 @@ const expectNoSteps = (r: Result) => {
 };
 
 describe('buildGuide with the mock provider (demo data)', () => {
+  it('reuses task-specific button observations for a retry and looks again for a different task', async () => {
+    const base = createMockGuideProviders();
+    const analyzeRemote = vi.fn<GuideProviders['analyzeRemote']>(async (image, signal, request) => {
+      const obs = await base.analyzeRemote(image, signal);
+      return { ...obs, controls: obs.controls.filter(c => c.role === (request === 'go home' ? 'home' : 'mute')) };
+    });
+    const deps = { providers: { ...base, analyzeRemote }, cache: new VisionCache(), secret: SECRET, signal: new AbortController().signal };
+    const input = { image: fakeImage(), locale: 'en' as const, answers: {}, request: 'no sound' };
+    const first = await buildGuide(input, deps);
+    const retry = await buildGuide({ ...input, answers: { note: 'still muted' } }, deps);
+    const nextTask = await buildGuide({ ...input, request: 'go home' }, deps);
+    expect(analyzeRemote.mock.calls.map(([, , task]) => task)).toEqual(['no sound', 'go home']);
+    expect(first.observedControls.map(c => c.role)).toEqual(['mute']);
+    expect(retry.observedControls).toEqual(first.observedControls);
+    expect(nextTask.observedControls.map(c => c.role)).toEqual(['home']);
+  });
+
   it('restore sound: ready, grounded in the generic reference, boxes inside the image', async () => {
     const r = await run('No sound on the TV');
     expect(GuideResult.parse(r)).toBeTruthy();

@@ -66,7 +66,7 @@ try {
     // Advertise the local WAV fixture to exercise the narration transport without a live key.
     await page.route('**/api/health', r => r.fulfill({ json: { ok: true, guide: true, speech: true, demo: false } }));
     await page.goto(`${base}?lang=en`);
-    await page.getByRole('link', { name: /Ready-made guides/ }).click();
+    await page.getByRole('link', { name: 'Ready-made guides' }).click();
     await page.getByText(/no device-verified guides yet/).waitFor();
     await checkLayout(page);
     await button('Try the demo').click();
@@ -80,8 +80,9 @@ try {
     assert.ok(await button('Start guide').isDisabled());
     await page.getByLabel(/Which HDMI port/).selectOption('HDMI 2');
     await page.getByLabel('Guide language').selectOption(locale);
-    await button(ml ? 'ഗൈഡ് തുടങ്ങുക' : 'Start guide').click();
-    assert.equal(await page.locator('html').getAttribute('lang'), locale);
+    await button('Start guide').click();
+    assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+    assert.equal(await page.locator('.player').evaluate(el => el.closest('[lang]').lang), locale);
     assert.ok(requests.every(r => r.url().endsWith('/api/health')));
 
     const play = button(ml ? 'കേൾക്കാം' : 'Play');
@@ -114,25 +115,25 @@ try {
     }
     await page.getByRole('heading', { name: ml ? 'കഴിഞ്ഞു!' : 'Done!' }).waitFor();
     await button(ml ? 'മറ്റൊരു ഗൈഡ് തിരഞ്ഞെടുക്കുക' : 'Choose another task').click();
-    await page.getByLabel(ml ? 'ചെയ്യേണ്ട കാര്യം' : 'Task', { exact: true }).selectOption('demo-unmute');
-    await button(ml ? 'ഗൈഡ് തുടങ്ങുക' : 'Start guide').click();
+    await page.getByLabel('Task', { exact: true }).selectOption('demo-unmute');
+    await button('Start guide').click();
     await checkButton(page, 'mute');
     await page.locator('.remote-viewport').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${out}/mute-${width}.png` });
     await page.route('**/api/speak', route => route.fulfill({ status: 503, body: '{}' }));
     await play.click();
     await page.locator('.audio-failed').waitFor();
-    assert.match(await page.locator('.instruction').textContent(), ml ? /MUTE/ : /MUTE/);
+    assert.match(await page.locator('.instruction').textContent(), /MUTE/);
     assert.ok(await yes.isEnabled());
     await different.click();
     await button(ml ? 'ടിവി മോഡൽ വീണ്ടും പരിശോധിക്കുക' : 'Recheck my TV model').click();
     await page.getByRole('searchbox').fill('DEMO-TV-01-UNKNOWN');
     await page.getByRole('status').waitFor();
     assert.ok(requests.every(r => /\/api\/(health|speak)$/.test(r.url())));
-    await page.getByRole('link', { name: ml ? 'എന്റെ റിമോട്ടിന്റെ ഫോട്ടോ ഉപയോഗിക്കുക' : 'Use my remote photo' }).click();
-    await page.getByRole('checkbox').waitFor();
+    await page.getByRole('link', { name: 'Use my remote photo' }).click();
+    await page.getByTestId('camera-input').waitFor({ state: 'attached' });
     assert.equal(new URL(page.url()).searchParams.get('flow'), 'remote');
-    assert.equal(new URL(page.url()).searchParams.get('lang'), locale);
+    assert.equal(new URL(page.url()).searchParams.get('lang'), 'en');
     assert.deepEqual(errors, []);
     console.log(`PASS ${width}px ${locale}: match, HDMI 2, measured overlays, playback/replay, text fallback, recovery and V2 entry`);
     await context.close();

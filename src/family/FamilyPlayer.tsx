@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { FamilySnapshot } from '../../shared/family';
-import { STRINGS } from '../i18n';
-import { StepPlayer } from '../player/StepPlayer';
+import { isUiLocale } from '../../shared/languages';
+import { GuidePlayer } from '../player/GuidePlayer';
 import { FAMILY } from './strings';
 
 export function useBlobUrl(blob: Blob | null | undefined) {
@@ -38,13 +38,13 @@ export function FamilyPlayer({ snapshot, photo, audio, footer, recheckAudio }: {
     return src;
   };
   const { locale } = snapshot;
-  const s = FAMILY[locale];
+  const s = FAMILY[isUiLocale(locale) ? locale : 'en'];
   if (!url) return <p role="status">{s.wait}</p>;
-  return <div lang={locale}><StepPlayer title={snapshot.title} subtitle={snapshot.nickname}
+  return <div lang={locale}><GuidePlayer family title={snapshot.title} subtitle={snapshot.nickname}
     badge={snapshot.demo ? { tone: 'demo', text: s.demo } : undefined} before={snapshot.before}
     steps={snapshot.steps.map(step => ({ ...step, hotspot: step.hotspot ?? undefined, button: step.button ?? undefined,
       loadAudio: step.hasAudio ? () => getClip(step.id) : undefined }))}
     image={{ src: url, ...snapshot.image, alt: s.remote, frameWidth: 'min(78%, 300px)' }}
-    locale={locale} t={{ ...STRINGS[locale], restart: s.restart, no: s.screenNo, doneTitle: locale === 'en' ? 'Done' : STRINGS.ml.doneTitle }}
+    locale={locale}
     footer={footer} /></div>;
 }

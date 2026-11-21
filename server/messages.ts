@@ -1,3 +1,5 @@
+import { extraGuideCopy } from './guide-languages';
+import type { UiLocale } from '../shared/languages';
 import type { GuideLocale } from '../shared/guide';
 
 const en = {
@@ -28,10 +30,15 @@ const ml: Messages = {
   home: 'Home',
 };
 
-export const MESSAGES: Record<GuideLocale, Messages> = { en, ml };
+function guideMessages(l: keyof typeof extraGuideCopy) {
+  const c = extraGuideCopy[l];
+  return { clearerPhoto: c.clearerPhoto, notRemote: c.notRemote, hdmiNeedsEvidence: c.hdmiQ,
+    confirmButton: (label: string) => c.confirm + ' «' + label + '»?', wifi: c.wifi, other: c.other };
+}
+export const MESSAGES = { en, ml, hi: guideMessages('hi'), ta: guideMessages('ta'), kn: guideMessages('kn'), te: guideMessages('te') } satisfies Record<GuideLocale, Pick<Messages, 'clearerPhoto' | 'notRemote' | 'hdmiNeedsEvidence' | 'confirmButton' | 'wifi' | 'other'>>;
 
 /** User-facing API error copy (client shows these verbatim). */
-export const API_ERRORS: Record<string, Record<GuideLocale, string>> = {
+export const API_ERRORS: Record<string, Record<UiLocale, string>> = {
   consent_required: { en: 'Please agree to send the photo and request before continuing.', ml: 'തുടരുന്നതിന് മുമ്പ് ഫോട്ടോയും ആവശ്യവും അയയ്ക്കാൻ സമ്മതം നൽകുക.' },
   image_missing: { en: 'Please add a photo of your remote.', ml: 'റിമോട്ടിന്റെ ഒരു ഫോട്ടോ ചേർക്കുക.' },
   image_type: { en: 'That file is not a JPEG, PNG or WebP photo. Take the photo again with the camera button.', ml: 'ഈ ഫയൽ JPEG, PNG, WebP ഫോട്ടോ അല്ല. ക്യാമറ ബട്ടൺ ഉപയോഗിച്ച് വീണ്ടും എടുക്കുക.' },

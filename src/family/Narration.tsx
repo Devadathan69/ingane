@@ -1,10 +1,53 @@
 import { useEffect, useRef, useState } from 'react';
-import { FAMILY_LIMITS, containsContact, containsCredential, type FamilyStep } from '../../shared/family';
+import { audioReady, FAMILY_LIMITS, containsContact, containsCredential, type FamilyStep } from '../../shared/family';
+import type { GuideLanguage } from '../../shared/languages';
 import type { Locale } from '../data/types';
 import { useRecorder } from '../guideme/useRecorder';
 import { sarvamClip } from './api';
 import { useBlobUrl } from './FamilyPlayer';
 import { FAMILY } from './strings';
+import type { FamilyDraft } from './draft';
+
+function spokenText(step: FamilyStep) {
+  return step.instruction.includes(step.screenLabel) ? step.instruction : step.instruction + '. ' + step.screenLabel;
+}
+
+export function GuideNarration({ draft, locale, accessKey, onClip, setWorking }: {
+  draft: FamilyDraft; locale: Locale; accessKey: string; onClip: (step: FamilyStep, audio: Blob) => void; setWorking: (busy: boolean) => void;
+}) {
+  const s = FAMILY[locale], { steps, locale: language } = draft.guide;
+  const [progress,setProgress] = useState(''), [failed,setFailed] = useState(false);
+  const running = useRef<AbortController | null>(null);
+  useEffect(() => () => { running.current?.abort(); setWorking(false); }, [setWorking]);
+  const missing = steps.filter(step => !draft.clips[step.id] && step.instruction.trim() &&
+    !containsContact(spokenText(step)) && !containsCredential(spokenText(step)));
+  const complete = steps.length > 0 && steps.every(step => draft.clips[step.id] && audioReady(step,language));
+  const generate = async () => {
+    if (running.current) return;
+    const ctrl = new AbortController();
+    running.current = ctrl; setFailed(false); setWorking(true);
+    try {
+      for (const [index,step] of missing.entries()) {
+        setProgress((index + 1) + ' / ' + missing.length);
+        try {
+          const wav = await familyWav(await sarvamClip(accessKey, language, spokenText(step), ctrl.signal));
+          if (ctrl.signal.aborted) break;
+          onClip(step,wav);
+        } catch {
+          if (ctrl.signal.aborted) break;
+          setFailed(true);
+        }
+      }
+    } finally { running.current = null; if (!ctrl.signal.aborted) { setProgress(''); setWorking(false); } }
+  };
+  return <section className="stack" aria-label={s.narrateAll}>
+    {complete ? <p role="status">{s.allVoiced}</p> : <>
+      <p className="muted">{s.narrateHelp}</p>
+      <button type="button" className="btn btn-secondary" disabled={!!progress || !missing.length} onClick={() => void generate()}>{s.narrateAll}</button>
+    </>}
+    {progress && <p role="status">{s.audioProgress} · {progress}</p>}{failed && <p className="warn-box" role="status">{s.audioPartial}</p>}
+  </section>;
+}
 
 /** A single metadata-free format gives the server an independently measurable duration. */
 export async function familyWav(input: Blob): Promise<Blob> {
@@ -29,38 +72,46 @@ export async function familyWav(input: Blob): Promise<Blob> {
 }
 
 export function Narration({ step, locale, language, clip, accessKey, live, onClip }: {
-  step: FamilyStep; locale: Locale; language: Locale; clip?: Blob; accessKey: string; live: boolean;
+  step: FamilyStep; locale: Locale; language: GuideLanguage; clip?: Blob; accessKey: string; live: boolean;
   onClip: (blob: Blob | null) => void;
 }) {
   const s = FAMILY[locale], [busy, setBusy] = useState(false), [error, setError] = useState(false);
+  const generation = useRef<AbortController | null>(null);
   const active = useRef(true), player = useRef<HTMLAudioElement>(null);
-  const matching = step.audioLocale === language;
-  const url = useBlobUrl(matching ? clip : null);
-  const text = step.instruction.includes(step.screenLabel) ? step.instruction : step.instruction + '. ' + step.screenLabel;
-  const latestText = useRef(text);
-  latestText.current = text;
-  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const matching = audioReady(step, language);
+  const [listened, setListened] = useState(false);
+  const url = useBlobUrl(clip);
+  const text = spokenText(step);
+  useEffect(() => setListened(false), [url]);
+  useEffect(() => { active.current = true; return () => { active.current = false; generation.current?.abort(); }; }, []);
   useEffect(() => { const el = player.current; return () => { el?.pause(); }; }, [url]);
-  const accept = async (input: Promise<Blob>, generatedText?: string) => {
+  const accept = async (input: Promise<Blob>) => {
     setBusy(true); setError(false);
     try {
-      const wav = await familyWav(await input);
-      if (active.current && (generatedText === undefined || latestText.current === generatedText)) onClip(wav);
+      const audio = await input;
+      if (!active.current) return;
+      const wav = await familyWav(audio);
+      if (active.current) onClip(wav);
     }
     catch { if (active.current) setError(true); } finally { if (active.current) setBusy(false); }
   };
   const rec = useRecorder(b => void accept(Promise.resolve(b)));
-  return <section className="stack narration-panel"><h2>{s.audio}</h2>
+  return <section className="stack narration-panel"><p className="muted">{s.audioEditHint}</p>
     <button className="btn btn-secondary" type="button" disabled={busy || rec.state === 'starting' || rec.state === 'unsupported'}
       onClick={() => { if (rec.state === 'recording') rec.stop(); else { player.current?.pause(); void rec.start(); } }}>
       {rec.state === 'recording' ? s.stop + ' · ' + rec.remaining + ' s' : (clip ? s.replaceAudio : s.record) + ' · 15 s'}
     </button>
     {(rec.state === 'denied' || rec.state === 'unsupported' || rec.state === 'failed') && <p className="muted" role="status">{s.noMic}</p>}
-    {url && <audio ref={player} key={url} controls preload="none" src={url} aria-label={s.replay} />}
-    {clip && <>{!matching && <p>{s.otherVoice}</p>}<button className="btn btn-secondary" type="button"
-      disabled={busy || rec.state === 'recording'} onClick={() => onClip(null)}>{s.removeAudio}</button></>}
-    <button type="button" className="btn btn-secondary" disabled={busy || rec.state === 'recording' || !live || !accessKey || !step.instruction.trim() || containsCredential(text) || containsContact(text)}
-      onClick={() => void accept(sarvamClip(accessKey, language, text), text)}>{s.sarvam}</button>
+    {url && <audio ref={player} key={url} controls preload="none" onEnded={e => {
+      const audio = e.currentTarget, played = audio.played;
+      setListened(played.length === 1 && played.start(0) < .15 && played.end(0) >= audio.duration - .15);
+    }} src={url} aria-label={s.replay} />}
+    {clip && <>{!matching && <><p role="status">{s.stale}</p>
+      <button type="button" className="btn btn-secondary" disabled={!listened || busy || rec.state === 'recording' || rec.state === 'starting'}
+        onClick={() => onClip(clip)}>{s.approve}</button></>}<button className="btn btn-secondary" type="button"
+      disabled={busy || rec.state === 'recording' || rec.state === 'starting'} onClick={() => onClip(null)}>{s.removeAudio}</button></>}
+    <button type="button" className="btn btn-secondary" disabled={busy || rec.state === 'recording' || rec.state === 'starting' || !live || !accessKey || !step.instruction.trim() || containsCredential(text) || containsContact(text)}
+      onClick={() => { generation.current = new AbortController(); void accept(sarvamClip(accessKey, language, text, generation.current.signal)); }}>{s.sarvam}</button>
     <p className="muted">{!live ? s.noSarvam : accessKey ? s.speechText : s.speechSignIn}</p>
     {busy && <p role="status">{s.busy}</p>}{error && <p className="warn-box" role="alert">{s.clipFailed}</p>}
   </section>;

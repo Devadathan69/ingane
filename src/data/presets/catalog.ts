@@ -30,7 +30,8 @@ export function presetText(copy: LocalizedText, locale: Locale, port: string | n
 
 /** Both the picker cover and its opt-in link use this same authored practice route. */
 export function hdmiDemo(data: PresetRegistry) {
-  const entry = catalogEntries(data, 'demo').find(e => e.tv.id === 'demo-tv' && e.remote.id === 'coolux-practice-layout');
+  const entry = catalogEntries(data, 'demo').find(e =>
+    e.tv.id === 'demo-tv' && e.guides.some(g => g.id === 'demo-hdmi'));
   const guide = entry?.guides.find(g => g.id === 'demo-hdmi');
   const port = 'HDMI 2';
   const first = guide && stepsFor(guide, port)?.[0];

@@ -4,6 +4,7 @@ import { ClarificationAnswers, LOCALE, type GuideLocale } from '../shared/guide'
 import type { ServerConfig } from './config';
 import { buildGuide, VisionCache, verifyNarrationToken } from './guide';
 import { checkAudio, checkImage, LIMITS } from './media';
+import { isUiLocale } from '../shared/languages';
 import { API_ERRORS } from './messages';
 import { ProviderError } from './providers/types';
 import { presetNarration } from './presets';
@@ -49,12 +50,15 @@ export function createApp(opts: AppOptions) {
   const getIp = opts.getIp ?? ((c: Context) => (config.trustProxy ? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() : undefined) ?? 'local');
 
   const app = new Hono();
-  const fail = (c: Context, status: number, code: string, locale: GuideLocale) =>
-    c.json({ error: code, message: API_ERRORS[code]?.[locale] ?? API_ERRORS.unavailable[locale] }, status as 400);
+  const fail = (c: Context, status: number, code: string, locale: GuideLocale) => {
+    const preferred = c.req.header('Accept-Language') ?? '';
+    const ui = isUiLocale(preferred) ? preferred : isUiLocale(locale) ? locale : 'en';
+    return c.json({ error: code, message: API_ERRORS[code]?.[ui] ?? API_ERRORS.unavailable[ui] }, status as 400);
+  };
 
   const providerFail = (c: Context, err: unknown, locale: GuideLocale) => {
     const code = err instanceof ProviderError ? err.code : 'unavailable';
-    // Only the normalized code is safe to log.
+    // Validation details can include authored text or labels from a photo.
     console.warn(`[ingane] provider error: ${code}`);
     const status = code === 'timeout' ? 504 : code === 'refusal' || code === 'rejected' ? 422 : code === 'not_configured' ? 503 : 502;
     return fail(c, status, code, locale);
@@ -89,6 +93,7 @@ export function createApp(opts: AppOptions) {
       return fail(c, 400, 'image_unreadable', 'en');
     }
     const locale = localeOf(form.locale);
+    if (form.locale != null && !LOCALE.safeParse(form.locale).success) return fail(c, 400, 'bad_answers', locale);
     if (form.consent !== 'true') return fail(c, 400, 'consent_required', locale);
     if (!limiters.guide.take(getIp(c))) return fail(c, 429, 'rate_limited', locale);
     if (!config.guide) return fail(c, 503, 'not_configured', locale);
@@ -121,7 +126,7 @@ export function createApp(opts: AppOptions) {
     try {
       const result = await buildGuide(
         { image: img.image, screenImage, request, locale, answers },
-        { providers: config.guide, cache, secret: config.narrationSecret, signal: withTimeout() },
+        { providers: config.guide, cache, secret: config.narrationSecret, signal: AbortSignal.any([withTimeout(), c.req.raw.signal]) },
       );
       return c.json(result);
     } catch (err) {
@@ -137,6 +142,7 @@ export function createApp(opts: AppOptions) {
       return fail(c, 400, 'audio_type', 'en');
     }
     const locale = localeOf(form.locale);
+    if (form.locale != null && !LOCALE.safeParse(form.locale).success) return fail(c, 400, 'bad_answers', locale);
     if (form.consent !== 'true') return fail(c, 400, 'consent_required', locale);
     if (!limiters.transcribe.take(getIp(c))) return fail(c, 429, 'rate_limited', locale);
     if (!config.speech) return fail(c, 503, 'not_configured', locale);
@@ -162,9 +168,10 @@ export function createApp(opts: AppOptions) {
       return fail(c, 400, 'tts_forbidden', 'en');
     }
     const locale = localeOf(body.locale);
+    if (!LOCALE.safeParse(body.locale).success) return fail(c, 403, 'tts_forbidden', locale);
     let text: string | undefined;
     if ('preset' in body) {
-      if (!LOCALE.safeParse(body.locale).success || 'text' in body || 'token' in body) return fail(c, 403, 'tts_forbidden', locale);
+      if ('text' in body || 'token' in body) return fail(c, 403, 'tts_forbidden', locale);
       text = presetNarration(body.preset, locale);
     } else if (typeof body.text === 'string' && body.text.length <= LIMITS.ttsChars && typeof body.token === 'string' &&
                verifyNarrationToken(config.narrationSecret, locale, body.text, body.token)) {

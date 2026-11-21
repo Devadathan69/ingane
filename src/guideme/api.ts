@@ -1,5 +1,5 @@
 import type { ClarificationAnswers, GuideResult } from '../../shared/guide';
-import type { Locale } from '../data';
+import { isUiLocale, type UiLocale, type GuideLanguage as Locale } from '../../shared/languages';
 import type { PresetNarration } from '../data/presets/types';
 
 export class ApiError extends Error {
@@ -8,22 +8,27 @@ export class ApiError extends Error {
   }
 }
 
-const FALLBACK: Record<Locale, string> = {
+const FALLBACK: Record<UiLocale, string> = {
   en: 'Could not reach the guide service. Check your connection and try again.',
   ml: 'ഗൈഡ് സേവനവുമായി ബന്ധപ്പെടാനായില്ല. കണക്ഷൻ നോക്കി വീണ്ടും ശ്രമിക്കുക.',
 };
 
-async function send(url: string, init: RequestInit, locale: Locale): Promise<Response> {
+async function send(url: string, init: RequestInit, locale: Locale, appLocale?: UiLocale): Promise<Response> {
+  const ui = appLocale ?? (isUiLocale(locale) ? locale : 'en');
+  const fallback = FALLBACK[ui];
+  const headers = new Headers(init.headers);
+  headers.set('Accept-Language', ui);
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, headers });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
-    throw new ApiError('network', FALLBACK[locale]);
+    throw new ApiError('network', fallback);
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
-    throw new ApiError(body?.error ?? `http_${res.status}`, body?.message ?? FALLBACK[locale]);
+    const code = res.status === 504 ? 'timeout' : typeof body?.error === 'string' ? body.error : `http_${res.status}`;
+    throw new ApiError(code, typeof body?.message === 'string' ? body.message : fallback);
   }
   return res;
 }
@@ -50,7 +55,7 @@ export async function getHealth(): Promise<Health | null> {
 }
 
 export async function requestGuide(
-  args: { image: Blob; screenImage?: Blob; request: string; locale: Locale; answers: ClarificationAnswers },
+  args: { image: Blob; screenImage?: Blob; request: string; locale: Locale; appLocale?: UiLocale; answers: ClarificationAnswers },
   signal?: AbortSignal,
 ): Promise<GuideResult> {
   const fd = new FormData();
@@ -60,16 +65,16 @@ export async function requestGuide(
   fd.set('answers', JSON.stringify(args.answers));
   fd.set('image', args.image, 'remote.jpg');
   if (args.screenImage) fd.set('screenImage', args.screenImage, 'screen.jpg');
-  const res = await send('api/guide', { method: 'POST', body: fd, signal }, args.locale);
+  const res = await send('api/guide', { method: 'POST', body: fd, signal }, args.locale, args.appLocale);
   return (await res.json()) as GuideResult;
 }
 
-export async function transcribe(audio: Blob, locale: Locale, signal?: AbortSignal): Promise<string> {
+export async function transcribe(audio: Blob, locale: Locale, signal?: AbortSignal, appLocale?: UiLocale): Promise<string> {
   const fd = new FormData();
   fd.set('consent', 'true');
   fd.set('locale', locale);
   fd.set('audio', audio, 'request');
-  const res = await send('api/transcribe', { method: 'POST', body: fd, signal }, locale);
+  const res = await send('api/transcribe', { method: 'POST', body: fd, signal }, locale, appLocale);
   return ((await res.json()) as { transcript: string }).transcript;
 }
 

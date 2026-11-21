@@ -26,7 +26,11 @@ server.stderr.on('data', d => logs.push(String(d)));
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const btn = (page, name) => page.getByRole('button', { name, exact: true });
 const input = (page, name) => page.getByLabel(name, { exact: true });
-const currentStep = page => page.locator('.step-fields');
+async function openSection(page, name) {
+  const summary = page.locator('summary').filter({hasText:name});
+  if (!await summary.evaluate(el => el.parentElement.open)) await summary.click();
+}
+const currentStep = page => page.locator('.family-step:has(.step-fields)');
 async function guardMedia(base, token, step, status) {
   for (const path of ['view', 'photo', 'clip/' + step]) {
     const res = await fetch(base + 'api/family/' + path, { headers: { Authorization: 'Bearer ' + token } });
@@ -43,9 +47,8 @@ async function startFamily(page, base) {
   await input(page, 'Task').selectOption('demo-hdmi');
   await page.getByLabel(/Which HDMI port/).selectOption('HDMI 2');
   await input(page, 'Guide language').selectOption('ml');
-  await btn(page, 'കുടുംബത്തിനായി ഗൈഡ് ഉണ്ടാക്കുക').click();
-  await page.getByRole('heading', { name: 'കുടുംബ ഗൈഡ് തിരുത്തുക' }).waitFor();
-  await btn(page, 'English').click();
+  await btn(page, 'Make a copy for family').click();
+  await page.getByRole('heading', { name: 'Edit family guide' }).waitFor();
 }
 try {
   let address;
@@ -64,8 +67,21 @@ try {
   page.on('pageerror', e => errors.push(e.message));
   await startFamily(page, base);
   await input(page, 'Guide title').fill('Amma, switch to HDMI 2');
+  await page.getByText('More guide details', { exact: true }).click();
   await input(page, 'Recipient nickname (optional)').fill('Amma');
   const instruction = 'അമ്മേ, ഇൻപുട്ട് ബട്ടൺ ഒരു തവണ അമർത്തൂ.';
+  await input(page, 'One action to take').fill(instruction);
+  await openSection(page, 'Step narration');
+  await page.getByLabel('App language').selectOption('ml');
+  assert.equal(await page.locator('#family-title').inputValue(), 'Amma, switch to HDMI 2');
+  assert.equal(await page.locator('textarea[id$="-instruction"]').inputValue(), instruction);
+  assert.equal(await page.locator('select[aria-describedby="guide-lang-hint"]').inputValue(), 'ml');
+  await page.locator('.topbar select').selectOption('en');
+  await page.getByRole('button', { name: /Record narration/ }).click();
+  await page.getByRole('button', { name: /Stop recording/ }).waitFor();
+  await input(page, 'One action to take').fill(instruction + ' HDMI 2');
+  await page.getByRole('button', { name: /Record narration/ }).waitFor();
+  assert.equal(await page.locator('audio').count(), 0);
   await input(page, 'One action to take').fill(instruction);
   assert.ok(await btn(page, 'Generate Sarvam narration').isDisabled());
   await page.getByRole('button', { name: /Record narration/ }).click();
@@ -87,6 +103,24 @@ try {
   assert.equal(await btn(page, 'ഇങ്ങനെ തന്നെ').count(), 0);
   await btn(page, 'ഈ ഘട്ടം വീണ്ടും നോക്കാം').click();
   await btn(page, 'Back to editor').click();
+  await input(page,'Guide language').selectOption('ta');
+  assert.equal(await input(page,'One action to take').inputValue(), instruction);
+  await input(page,'Guide language').selectOption('ml');
+  await openSection(page, 'Exact TV label');
+  await input(page,'Exact TV label (optional)').fill('HDMI 2');
+  await openSection(page, 'Step narration');
+  const approve = btn(page,'Approve this clip for the current step');
+  assert.ok(await approve.isDisabled());
+  await btn(page,'Preview guide').click();
+  await page.locator('.instruction').waitFor();
+  assert.equal(await page.locator('.btn-listen').count(),0);
+  await btn(page,'Back to editor').click();
+  await openSection(page, 'Step narration');
+  await page.locator('audio').evaluate(el => el.play());
+  await page.waitForFunction(() => document.querySelector('.narration-panel audio')?.ended);
+  await approve.click();
+  await btn(page,'Save draft').click();
+  await page.getByText('Draft saved on this device.').waitFor();
   await input(page, 'Creator access key').fill(key); await btn(page, 'Creator sign-in').click();
   await btn(page, 'Share link').click();
   assert.ok(await btn(page, 'Create read-only link').isDisabled());
@@ -118,6 +152,8 @@ try {
   const snap = await (await fetch(base + 'api/family/view', { headers: { Authorization: 'Bearer ' + token } })).json();
   const firstStep = snap.steps[0].id;
   await guardMedia(base, token, firstStep, 200);
+  const delayedAudio = Buffer.from(await (await fetch(base+'api/family/clip/'+encodeURIComponent(firstStep),
+    {headers:{Authorization:'Bearer '+token}})).arrayBuffer());
   for (let i = 0; i < 4; i++) { await parent.getByTestId('hotspot').waitFor(); await btn(parent, 'ഇങ്ങനെ തന്നെ').click(); }
   await parent.getByRole('heading', { name: 'കഴിഞ്ഞു!' }).waitFor();
   await parent.getByRole('button', { name: /വീണ്ടും തുടങ്ങുക/ }).click();
@@ -133,6 +169,7 @@ try {
   await btn(page, 'Stop sharing').click(); await btn(page, 'Stop sharing').click();
   await page.getByText('Sharing stopped.').waitFor();
   await guardMedia(base, secondToken, firstStep, 404);
+  await openSection(page, 'Step narration');
   await btn(page, 'Remove narration').click();
   assert.equal(await page.locator('audio').count(), 0);
   await parent.reload(); await parent.locator('h1').waitFor();
@@ -151,8 +188,10 @@ try {
     const p = await context.newPage();
     await p.route('**/api/**', r => r.abort());
     await p.addInitScript(() => { navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Denied', 'NotAllowedError')); });
-    await p.goto(base + '?flow=family&lang=en'); await btn(p, 'Start with a remote photo').click();
+    await p.goto(base + '?flow=family&lang=en'); await btn(p, 'Start with your own remote photo').click();
+    await btn(p,'Save draft').click(); await p.getByText('Draft saved on this device.').waitFor();
     await btn(p, 'Preview guide').click(); await p.getByText('Add a guide title.').waitFor();
+    await p.waitForFunction(() => document.activeElement.id === 'family-title');
     assert.ok(await btn(p, 'Share link').isDisabled());
     await input(p, 'Guide title').fill('Manual remote');
     await p.getByTestId('family-photo').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('x') });
@@ -178,18 +217,29 @@ try {
     await sliders.nth(2).focus(); await p.keyboard.press('ArrowRight');
     const box = await p.getByTestId('hotspot').evaluate(e => [e.style.left,e.style.top,e.style.width,e.style.height].map(v => parseFloat(v) / 100));
     await input(p, 'One action to take').fill('Press the wheel once.');
-    await input(p, 'What should they see or hear?').fill('The input list opens.');
-    await input(p, 'If it looks different').fill('Check the wheel.');
+    await p.setViewportSize({width,height:450});
+    const focused = input(p,'One action to take');
+    await focused.focus(); await focused.scrollIntoViewIfNeeded();
+    assert.equal(await p.locator('.editor-actions').evaluate(el => getComputedStyle(el).position), 'static');
+    assert.ok(await focused.evaluate(el => {
+      const bounds = el.getBoundingClientRect(); return bounds.top >= 0 && bounds.bottom <= innerHeight;
+    }));
+    await p.setViewportSize({width,height:800});
+    await input(p, 'What should they see?').fill('The input list opens.');
+    await input(p, 'What if it looks different?').fill('Check the wheel.');
+    await p.getByText('Step narration', { exact: true }).click();
     await p.getByRole('button', { name: /Record narration/ }).click();
     await p.getByText('Microphone access is unavailable. You can continue with text.').waitFor();
     await btn(p, 'Add step').click();
     await currentStep(p).locator('select').first().selectOption('checkpoint');
     await input(p, 'One action to take').fill('Read the port label.');
-    await input(p, 'What should they see or hear?').fill('HDMI 2 is visible.');
-    await input(p, 'If it looks different').fill('Go back.');
+    await input(p, 'What should they see?').fill('HDMI 2 is visible.');
+    await input(p, 'What if it looks different?').fill('Go back.');
+    await currentStep(p).locator('summary').filter({ hasText: 'Exact TV label' }).click();
     await input(p, 'Exact TV label (optional)').fill('HDMI 2');
+    await currentStep(p).getByText('More step options').click();
     await btn(p, 'Move up · 2').focus(); await p.keyboard.press('Enter');
-    await btn(p, 'Add step').click(); await btn(p, 'Remove step · 3').click();
+    await btn(p, 'Add step').click(); await currentStep(p).getByText('More step options').click(); await btn(p, 'Remove step · 3').click();
     await btn(p, 'Save draft').click(); await p.getByText('Draft saved on this device.').waitFor();
     await p.reload(); await btn(p, 'Edit').click(); await btn(p, 'Preview guide').click();
     assert.equal(await p.getByTestId('hotspot').count(), 0);
@@ -213,20 +263,94 @@ try {
       await btn(p, 'Back to My Family Guides').click(); await btn(p, 'Leave without saving').click();
       await p.getByRole('heading', { name: 'Saved in the other tab' }).waitFor(); await other.close();
     }
+    await btn(p,'Edit').click();
+    await p.locator('.step-summary').nth(1).click();
+    await p.getByTestId('hotspot').waitFor();
+    const written = await input(p,'One action to take').inputValue();
+    await p.getByTestId('family-photo').setInputFiles(practicePhoto);
+    await btn(p,'Keep current photo').click();
+    assert.ok(await p.getByTestId('hotspot').isVisible());
+    await p.getByTestId('family-photo').setInputFiles(practicePhoto);
+    await btn(p,'Replace photo and clear marks').click();
+    await btn(p,'Place mark at centre').waitFor();
+    assert.equal(await p.getByTestId('hotspot').count(),0);
+    assert.equal(await input(p,'One action to take').inputValue(),written);
+    await btn(p,'Back to My Family Guides').click(); await btn(p,'Leave without saving').click();
     await btn(p, 'Delete draft').click(); await btn(p, 'Delete draft').click(); await p.getByText('No saved drafts yet.').waitFor();
     console.log('PASS ' + width + 'px: offline manual photo, mark adjustment, denied mic, keyboard reorder, checkpoints, persistence and deletion');
     await context.close();
   }
+  // Delayed synthesis uses a local test transport. No guide, text or audio leaves loopback.
+  const pending = await browser.newContext();
+  const editing = await pending.newPage();
+  await editing.route('**/api/family/status', r => r.fulfill({json:{sharing:true,sarvam:true}}));
+  let finishRequest;
+  const release = new Promise(resolve => { finishRequest = resolve; });
+  await editing.route('**/api/family/owner/narrate', async route => {
+    await release;
+    await route.fulfill({status:200,contentType:'audio/wav',body:delayedAudio}).catch(() => {});
+  });
+  await startFamily(editing,base);
+  await input(editing,'Creator access key').fill(key); await btn(editing,'Creator sign-in').click();
+  await openSection(editing,'Step narration');
+  const started = editing.waitForRequest(r => r.url().endsWith('/owner/narrate'));
+  await btn(editing,'Generate Sarvam narration').click();
+  await started;
+  await input(editing,'One action to take').fill('HOME തുറക്കുക.');
+  finishRequest();
+  await btn(editing,'Generate Sarvam narration').waitFor();
+  assert.equal(await editing.locator('audio').count(),0);
+  assert.equal(await editing.getByRole('alert').count(),0);
+  await btn(editing,'Preview guide').click(); await editing.locator('.instruction').waitFor();
+  assert.equal(await editing.locator('.btn-listen').count(),0);
+  await pending.close();
+  console.log('PASS UI language preserves edits; changing recorded or pending synthesized steps excludes stale clips; replay and approval restore audio');
   const session = await browser.newContext(); const v2 = await session.newPage();
-  await v2.goto(base + '?flow=remote&lang=en'); await v2.getByRole('checkbox').check(); await btn(v2, 'Continue').click();
+  await v2.goto(base + '?flow=remote&lang=en');
   await v2.getByTestId('gallery-input').setInputFiles(practicePhoto);
-  await btn(v2, 'Use this photo').click(); await v2.getByRole('textbox').fill('no sound'); await btn(v2, 'Make my guide').click();
-  await btn(v2, 'Create a family guide').click(); await v2.getByText('Review the copied steps and button marks before saving.').waitFor();
+  await btn(v2, 'Use this photo').click(); await v2.getByRole('checkbox').check(); await v2.getByRole('textbox').fill('no sound'); await btn(v2, 'Make my guide').click();
+  await btn(v2, 'Make a copy for family').click(); await v2.getByText('Review the copied steps and button marks before saving.').waitFor();
   await btn(v2, 'Preview guide').click(); await v2.getByTestId('hotspot').waitFor(); await btn(v2, 'Back to editor').click();
   await btn(v2, 'Back to My Family Guides').click(); await btn(v2, 'Leave without saving').click();
   await v2.getByText('No saved drafts yet.').waitFor();
   console.log('PASS current V2 result enters review and can be discarded before persistence');
   await session.close();
+  // These use the mock planner and a deliberately unavailable audio endpoint.
+  for (const [language, request, script] of [
+    ['hi','टीवी की Home स्क्रीन खोलें।',/\p{Script=Devanagari}/u],
+    ['ta','Home திரையைத் திறக்கவும்.',/\p{Script=Tamil}/u],
+    ['kn','Home ಪರದೆ ತೆರೆಯಿರಿ.',/\p{Script=Kannada}/u],
+    ['te','Home తెర తెరవండి.',/\p{Script=Telugu}/u],
+  ]) {
+    const ctx = await browser.newContext({viewport:{width:360,height:800},reducedMotion:'reduce'});
+    const page = await ctx.newPage();
+    await page.route('**/api/health',r=>r.fulfill({json:{ok:true,guide:true,speech:true,demo:false}}));
+    await page.route('**/api/speak',r=>r.fulfill({status:503,body:'{}'}));
+    await page.goto(base+'?flow=remote&lang=en');
+    await page.getByTestId('gallery-input').setInputFiles(practicePhoto);
+    await page.getByRole('button',{name:'Use this photo'}).click();
+    await page.getByLabel('Which language should I guide you in?').selectOption(language);
+    await page.getByRole('textbox').fill(request);
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button',{name:'Make my guide'}).click();
+    await page.getByTestId('hotspot').waitFor();
+    const instruction=await page.locator('.instruction').innerText();
+    assert.ok(script.test(instruction) && instruction.includes('Home'));
+    assert.equal(await page.locator('html').getAttribute('lang'),'en');
+    await page.locator('.btn-listen').click();
+    await page.locator('.audio-failed').waitFor();
+    assert.equal(await page.locator('.instruction').innerText(),instruction);
+    assert.ok(await page.locator('.btn-yes').isEnabled());
+    await btn(page,'Make a copy for family').click();
+    assert.equal(await input(page,'Guide language').inputValue(),language);
+    assert.equal(await input(page,'One action to take').inputValue(),instruction);
+    await btn(page,'Preview guide').click(); await page.getByTestId('hotspot').waitFor();
+    assert.equal(await page.locator('.instruction').innerText(),instruction);
+    console.log('PASS '+language+' generated photo guide, exact Home label, text fallback and independent recipient preview (mock)');
+    await ctx.close();
+  }
+
+
 } finally {
   await browser?.close(); server.kill();
 }

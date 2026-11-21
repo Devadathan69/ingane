@@ -3,6 +3,7 @@ import { catalogEntries, hdmiDemo, stepsFor } from '../data/presets/catalog';
 import { presetRegistry } from '../data/presets/registry';
 import type { CatalogEntry, CatalogScope, PresetRegistry, TaskGuide, TvProfile } from '../data/presets/types';
 import type { Locale } from '../data/types';
+import { uiLanguages, languages } from '../../shared/languages';
 import { STRINGS } from '../i18n';
 import { PhotoLink, PresetPlayer } from './PresetPlayer';
 import { PRESET_STRINGS } from './strings';
@@ -19,7 +20,6 @@ type Screen =
 
 interface Props {
   locale: Locale;
-  onLocale: (locale: Locale) => void;
   registry?: PresetRegistry;
   demoHdmi2?: boolean;
   onFamily?: (seed: FamilySeed) => void;
@@ -28,7 +28,9 @@ interface Props {
 const root: Screen = { kind: 'brands' };
 const tvVariant = (tv: TvProfile) => [tv.market, tv.os, tv.menuVariant].filter(Boolean).join(' · ');
 
-export function Library({ locale, onLocale, registry = presetRegistry, onFamily, demoHdmi2 = false }: Props) {
+export function Library({ locale, registry = presetRegistry, onFamily, demoHdmi2 = false }: Props) {
+  const [chosenLanguage, setGuideLanguage] = useState<Locale | null>(null);
+  const guideLanguage = chosenLanguage ?? locale;
   const [trail, setTrail] = useState<Screen[]>(() => {
     if (!demoHdmi2) return [root];
     const demo = hdmiDemo(registry);
@@ -53,7 +55,8 @@ export function Library({ locale, onLocale, registry = presetRegistry, onFamily,
     heading.current?.focus();
   }, [screen, scope]);
 
-  if (screen.kind === 'play') return <PresetPlayer {...screen} scope={scope} locale={locale}
+  if (screen.kind === 'play') return <PresetPlayer {...screen} scope={scope} locale={guideLanguage} appLocale={locale}
+    onFamily={onFamily ? () => onFamily({ source: 'preset', entry: screen.entry, guide: screen.guide, port: screen.port, locale: guideLanguage }) : undefined}
     onTasks={back} onRecheck={() => setTrail([root, { kind: 'models', brand: screen.entry.tv.brand }])} />;
 
   const titles = { brands: s.title, models: s.model, remotes: s.remote, tasks: s.chooseTask };
@@ -62,6 +65,7 @@ export function Library({ locale, onLocale, registry = presetRegistry, onFamily,
     <FlowHeading icon="library" title={titles[screen.kind]} headingRef={heading} description={screen.kind === 'brands' ? s.entry : undefined} />
     <div className="flow-panel stack">
       {scope === 'demo' && <span className="badge badge-demo">{s.demo}</span>}
+      {scope === 'demo' && screen.kind === 'brands' && hdmiDemo(registry) && <a className="btn btn-secondary" href={`?flow=presets&demo=hdmi-2&lang=${locale}`}>{s.hdmiDemo}</a>}
       {(screen.kind === 'brands' || screen.kind === 'models') &&
         <ModelBrowser key={`${scope}-${screen.kind}`} entries={entries} locale={locale} scope={scope}
           brand={screen.kind === 'models' ? screen.brand : undefined}
@@ -77,7 +81,7 @@ export function Library({ locale, onLocale, registry = presetRegistry, onFamily,
           onConfirm={() => push({ kind: 'tasks', entry, task: screen.task })} />)}
       </>}
       {screen.kind === 'tasks' && <TaskPicker entry={screen.entry} preferredTask={screen.task}
-        locale={locale} onLocale={onLocale} onFamily={onFamily} onStart={(guide, port) => push({ kind: 'play', entry: screen.entry, guide, port })} />}
+        locale={locale} language={guideLanguage} onLanguage={setGuideLanguage} onFamily={onFamily} onStart={(guide, port) => push({ kind: 'play', entry: screen.entry, guide, port })} />}
     </div>
     {screen.kind !== 'tasks' && <PhotoLink locale={locale} reason={screen.kind === 'remotes' ? s.noLayout : undefined} />}
     {screen.kind === 'brands' ?
@@ -166,8 +170,8 @@ function LayoutCard({ entry, locale, samePart, onConfirm }: {
   </section>;
 }
 
-function TaskPicker({ entry, preferredTask, locale, onLocale, onStart, onFamily }: {
-  entry: CatalogEntry; preferredTask?: TaskGuide['task']; locale: Locale; onLocale: Props['onLocale'];
+function TaskPicker({ entry, preferredTask, locale, language, onLanguage, onStart, onFamily }: {
+  entry: CatalogEntry; preferredTask?: TaskGuide['task']; locale: Locale; language: Locale; onLanguage: (l: Locale) => void;
   onStart: (guide: TaskGuide, port: string | null) => void;
   onFamily?: Props['onFamily'];
 }) {
@@ -176,6 +180,8 @@ function TaskPicker({ entry, preferredTask, locale, onLocale, onStart, onFamily 
   const guide = entry.guides.find(g => g.id === guideId);
   const s = PRESET_STRINGS[locale];
   const ready = guide && stepsFor(guide, port);
+  // Registry validation checks the steps, labels and narration for every authored locale.
+  const authored = uiLanguages.filter(l => !guide || !!guide.title[l]?.trim());
   return <form className="stack" onSubmit={e => { e.preventDefault(); if (guide && ready) onStart(guide, port); }}>
     <p className="preset-context">{entry.tv.modelCode} · {entry.remote.partNumber}</p>
     <div className="field">
@@ -197,13 +203,14 @@ function TaskPicker({ entry, preferredTask, locale, onLocale, onStart, onFamily 
     </>}
     <div className="field">
       <label htmlFor="preset-language">{s.language}</label>
-      <select id="preset-language" value={locale} onChange={e => onLocale(e.target.value as Locale)}>
-        <option value="ml" lang="ml">മലയാളം</option><option value="en" lang="en">English</option>
+      <select id="preset-language" aria-describedby={guide ? "preset-available" : undefined} value={language} onChange={e => onLanguage(e.target.value as Locale)}>
+        {authored.map(l => <option key={l} value={l} lang={l}>{languages[l].native}</option>)}
       </select>
     </div>
+    {guide && <small id="preset-available">{locale === 'en' ? 'Available for this guide' : 'ഈ ഗൈഡിന്റെ ഭാഷകൾ'} · {authored.map(l => languages[l].native).join(' · ')}</small>}
     <button className="btn btn-primary" type="submit" disabled={!ready}>{s.start}</button>
     {onFamily && <button className="btn btn-secondary" type="button" disabled={!ready}
-      onClick={() => guide && ready && onFamily({ source: 'preset', entry, guide, port, locale })}>{FAMILY[locale].create}</button>}
+      onClick={() => guide && ready && onFamily({ source: 'preset', entry, guide, port, locale: language })}>{FAMILY[locale].create}</button>}
     <PhotoLink locale={locale} reason={guide?.task === 'switch_hdmi' ? s.missingPort : undefined} />
   </form>;
 }

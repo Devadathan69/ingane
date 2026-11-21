@@ -1,4 +1,5 @@
 import { FAMILY_LIMITS, FAMILY_VERSION, type FamilyGuide, type FamilyStep } from '../../shared/family';
+import type { GuideLanguage } from '../../shared/languages';
 import type { GuideResult } from '../../shared/guide';
 import { presetText, stepsFor } from '../data/presets/catalog';
 import type { CatalogEntry, TaskGuide } from '../data/presets/types';
@@ -18,7 +19,7 @@ export const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16))
 export const newStep = (): FamilyStep => ({
   id: newId(), kind: 'button', controlId: null, instruction: '', expected: '', recovery: '', screenLabel: '', audioLocale: null,
 });
-export function blankDraft(locale: Locale): FamilyDraft {
+export function blankDraft(locale: GuideLanguage): FamilyDraft {
   return { id: newId(), revision: 0, updatedAt: 0, photo: null, clips: {},
     guide: { version: FAMILY_VERSION, locale, title: '', nickname: '', before: '', demo: false, image: null, controls: [], steps: [newStep()] } };
 }

@@ -69,30 +69,24 @@ try {
   for (const [width, height, locale] of [[360,800,'ml'], [430,820,'en'], [1280,850,'en']]) {
     const p = await browser.newPage({ viewport: { width, height } });
     await p.goto(new URL('?lang=' + locale, base).href);
-    await p.locator('.cover-ring').waitFor();
+    await p.locator('.capture-primary').waitFor();
     await p.evaluate(() => document.fonts.ready);
-    assert.equal(await p.locator('.picker .route-card').count(), 3);
-    const art = await p.evaluate(() => {
-      const stage = document.querySelector('.cover-art').getBoundingClientRect();
-      const image = document.querySelector('.cover-photo img').getBoundingClientRect();
-      const box = document.querySelector('.cover-ring').getBoundingClientRect();
-      const tip = new DOMPoint(0, 0).matrixTransform(document.querySelector('.cover-tip svg').getScreenCTM());
-      const label = document.querySelector('.callout-label').getBoundingClientRect();
-      return {
-        allVisible: image.top >= stage.top && image.bottom <= stage.bottom && label.left >= stage.left && label.right <= stage.right,
-        error: Math.hypot(tip.x - box.x - box.width / 2, tip.y - box.y - box.height / 2),
-        overflow: document.documentElement.scrollWidth - innerWidth,
-      };
-    });
-    assert.ok(art.allVisible && art.error < 0.1 && art.overflow <= 0, JSON.stringify(art));
+    assert.equal(await p.locator('.picker .route-card').count(), 2);
+    assert.equal(await p.locator('.picker .press-hand, .picker .ring').count(), 0);
+    assert.deepEqual(await p.locator('.route-card').evaluateAll(links => links.map(a => new URL(a.href).searchParams.get('flow'))), ['presets','family']);
+    assert.ok(await p.locator('.home-example .example-remote').isVisible());
+    assert.ok(await p.locator('.home-example figcaption').isVisible());
+    assert.ok(await p.locator('.picker').evaluate(el => el.querySelector('button')?.classList.contains('capture-primary')));
+    assert.ok(await p.locator('.picker').evaluate(el => [...el.querySelectorAll('a,button')].every(b => b.getBoundingClientRect().height >= 48)));
+    assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await p.screenshot({ path: join(output, 'picker-' + width + '.png'), fullPage: true });
-    await p.locator('.cover-start').focus(); await p.keyboard.press('Enter');
+    await p.locator('.practice-link').focus(); await p.keyboard.press('Enter');
     await p.locator('.btn-yes').waitFor();
     assert.equal(new URL(p.url()).searchParams.get('demo'), 'hdmi-2');
     assert.equal(new URL(p.url()).searchParams.get('lang'), locale);
     await p.close();
   }
-  console.log('PASS guide picker, photo and pointer registration, three destinations and keyboard demo entry');
+  console.log('PASS photo-first picker, native language selection, two secondary routes and keyboard demo entry');
   for (const [width, height, locale] of [[360,800,'en'], [430,820,'ml'], [1280,850,'en']]) {
     const { p, check } = await pageFor(width, height, locale, 'no-preference', true);
     await p.waitForFunction(() => window.photoLifts.length > 0);

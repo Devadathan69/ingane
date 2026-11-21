@@ -1,67 +1,53 @@
-import { useState, type ReactNode } from 'react';
+import { useRef } from 'react';
 import type { Locale } from '../data';
 import { hdmiDemo } from '../data/presets/catalog';
 import { presetRegistry } from '../data/presets/registry';
-import { FAMILY } from '../family/strings';
+import { PhotoInputs } from '../guideme/PhotoInputs';
 import { STRINGS } from '../i18n';
-import { hotspotStyle, PressHand } from '../player/PressCue';
-import { PRESET_STRINGS } from '../presets/strings';
 import { Icon } from '../ui/Icon';
-import { ButtonCallout, StageBackdrop } from '../ui/PhotoStage';
 import './guide-picker.css';
 
 const practice = hdmiDemo(presetRegistry);
 
-function CoverPhoto({ demo }: { demo: NonNullable<typeof practice> }) {
-  const { asset } = demo.entry.remote;
-  const box = demo.control.hotspot;
-  const [photo, setPhoto] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-  if (photo === 'unavailable') return null;
-  return <div className="cover-art" aria-hidden="true" data-photo-stage>
-    <StageBackdrop />
-    <div className="cover-photo" style={{ aspectRatio: asset.width + ' / ' + asset.height }}>
-      <img className="practice-cutout" src={asset.src} width={asset.width} height={asset.height} alt="" fetchPriority="high"
-        onLoad={e => setPhoto(e.currentTarget.naturalWidth === asset.width && e.currentTarget.naturalHeight === asset.height ? 'ready' : 'unavailable')}
-        onError={() => setPhoto('unavailable')} />
-      {photo === 'ready' && <>
-        <span className="cover-ring" style={hotspotStyle(box)} />
-        <ButtonCallout box={box} label={(demo.control.shortLabel ?? demo.control.label).en} />
-        <span className="cover-tip" style={{ left: (box.x + box.w / 2) * 100 + '%', top: (box.y + box.h / 2) * 100 + '%' }}>
-          <PressHand />
-        </span>
-      </>}
+function RemoteExample({ locale }: { locale: Locale }) {
+  const t = STRINGS[locale];
+  return <figure className="home-example">
+    <div className="example-art" aria-hidden="true">
+      <div className="example-orbit" /><div className="example-frame" />
+      <div className="example-remote">
+        <span className="example-power">⏻</span><i className="example-shortcut" />
+        <div className="example-pad"><i /><b /><b /><b /><b /></div>
+        <div className="example-rockers"><span>+<br />−</span><span><i /><i /></span></div>
+      </div>
+      <div className="example-leader" /><i className="example-dot" />
     </div>
-  </div>;
+    <figcaption className="example-copy"><span>{t.exampleQuestion}</span><strong>{t.exampleAnswer}</strong><small>{t.exampleCaption}</small></figcaption>
+  </figure>;
 }
 
-export function GuidePicker({ locale, children }: { locale: Locale; children: ReactNode }) {
-  const t = STRINGS[locale], presets = PRESET_STRINGS[locale];
-  const destinations = [
-    { flow: 'presets', icon: 'library', title: presets.title, description: presets.entry },
-    { flow: 'remote', icon: 'camera', title: t.guideMe, description: t.guideMeBody },
-    { flow: 'family', icon: 'family', title: FAMILY[locale].hub, description: t.familyIntro },
-  ] as const;
+export function GuidePicker({ locale, onPhoto }: { locale: Locale; onPhoto: (file: File) => void }) {
+  const t = STRINGS[locale];
+  const camera = useRef<HTMLInputElement>(null), gallery = useRef<HTMLInputElement>(null);
   return <main className="picker" aria-labelledby="picker-title">
-    <header className="picker-heading"><h1 id="picker-title">{t.chooseTitle}</h1><p>{t.tagline}</p></header>
-    {practice && <section className="demo-cover" aria-labelledby="demo-title">
-      <CoverPhoto demo={practice} />
-      <div className="cover-copy">
-        <span className="cover-badge">{t.interactiveDemo}</span>
-        <h2 id="demo-title">{t.demoTitle}</h2>
-        <p>{t.demoIntro}</p>
-        <a className="btn btn-primary cover-start" href={`?flow=presets&demo=hdmi-2&lang=${locale}`}>
-          {presets.hdmiDemo}<Icon name="arrow" />
-        </a>
+    <section className="photo-home" aria-labelledby="picker-title">
+      <header className="home-intro">
+        <p className="home-kicker">{t.tvHelp}</p>
+        <h1 id="picker-title">{t.chooseTitle}</h1>
+        <p className="home-hint">{t.homeHint}</p>
+      </header>
+      <RemoteExample locale={locale} />
+      <div className="capture-actions">
+        <PhotoInputs camRef={camera} galRef={gallery} onFile={onPhoto} />
+        <button type="button" className="btn btn-primary capture-primary" aria-describedby="home-photo-privacy" onClick={() => camera.current?.click()}><Icon name="camera" /><span>{t.takeRemote}</span><Icon name="arrow" /></button>
+        <button type="button" className="btn capture-gallery" onClick={() => gallery.current?.click()}><Icon name="gallery" /><span>{t.choosePhoto}</span></button>
+        <p className="sr-only" id="home-photo-privacy">{t.localPhoto}</p>
       </div>
-    </section>}
+    </section>
     <nav className="picker-nav" aria-labelledby="other-guides">
       <h2 id="other-guides">{t.otherGuides}</h2>
-      <div className="route-list">{destinations.map(item => <a key={item.flow} className="route-card" href={`?flow=${item.flow}&lang=${locale}`}>
-        <span className="icon-tile"><Icon name={item.icon} /></span>
-        <span className="route-copy"><strong>{item.title}</strong><span>{item.description}</span></span>
-        <Icon name="open" />
-      </a>)}</div>
+      <a className="route-card" href={`?flow=presets&lang=${locale}`}><span className="icon-tile"><Icon name="guide" /></span><strong>{t.browse}</strong><Icon name="arrow" /></a>
+      <a className="route-card" href={`?flow=family&lang=${locale}`}><span className="icon-tile"><Icon name="family" /></span><strong>{t.createForSomeone}</strong><Icon name="arrow" /></a>
     </nav>
-    <details className="older-guides"><summary>{presets.older}</summary>{children}</details>
+    {practice && <a className="practice-link" href={`?flow=presets&demo=hdmi-2&lang=${locale}`}>{t.tryDemo}</a>}
   </main>;
 }

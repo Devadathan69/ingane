@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { GUIDES, DEVICES, LOCALES, lookupGuide, type Locale } from './data';
+import { languages, uiLanguages } from '../shared/languages';
 import { STRINGS } from './i18n';
 import { GuideMe } from './guideme/GuideMe';
 import { Player } from './player/Player';
@@ -36,6 +37,13 @@ export function App() {
   const [guideId, setGuideId] = useState(() => readParams().guide);
   const [flow, setFlow] = useState(() => readParams().flow);
   const t = STRINGS[locale];
+  const [entryPhoto, setEntryPhoto] = useState<File | undefined>();
+  const openPhoto = (file: File) => {
+    setEntryPhoto(file);
+    setGuideId(null);
+    setFlow('remote');
+    window.history.pushState(null, '', `?flow=remote&lang=${locale}`);
+  };
   const [seed, setSeed] = useState<FamilySeed | null>(null);
   const createFamily = (source: FamilySeed) => {
     setSeed(source); setGuideId(null); setFlow('family');
@@ -49,6 +57,8 @@ export function App() {
 
   useEffect(() => {
     const onPop = () => {
+      setEntryPhoto(undefined);
+      setSeed(null);
       setGuideId(readParams().guide);
       setFlow(readParams().flow);
     };
@@ -73,15 +83,20 @@ export function App() {
   };
 
   const result = lookupGuide(guideId);
+  const home = !guideId && !['remote', 'presets', 'family', 'family-view'].includes(flow ?? '');
+  const hasPhotoCredit = Object.values(DEVICES).some(device => device.image === 'devices/coolux-practice.jpg');
 
   return (
-    <div className="app">
+    <div className={home ? 'app app-home' : 'app'}>
       <header className="topbar">
-        <a className="brand" href={`?lang=${locale}`} lang="ml">
+        <a className="brand" href={`?lang=${locale}`} aria-label={t.appName}>
           <img className="brand-symbol" src="ingane.svg" width="40" height="40" alt="" />
-          <span className="brand-word">ഇങ്ങനെ</span><span className="brand-latin" lang="en">Ingane</span>
+          <span className="brand-word" lang="ml">ഇങ്ങനെ</span>
         </a>
-        {flow !== 'family-view' && <button
+        {!guideId && flow !== 'family-view' ? <select className="lang-toggle" aria-label={t.interfaceLanguage} value={locale}
+          onChange={e => changeLocale(e.target.value as Locale)}>
+          {uiLanguages.map(l => <option key={l} value={l} lang={l}>{languages[l].native}</option>)}
+        </select> : flow !== 'family-view' && <button
           type="button"
           className="lang-toggle"
           lang={t.switchToLang}
@@ -94,16 +109,16 @@ export function App() {
       {flow === 'family-view' ? (
         <Suspense fallback={<p role="status">{FAMILY[locale].wait}</p>}><FamilyViewer locale={locale} /></Suspense>
       ) : flow === 'remote' && !guideId ? (
-        <GuideMe locale={locale} onLocale={changeLocale} onFamily={createFamily} />
+        <GuideMe locale={locale} initialFile={entryPhoto} onFamily={createFamily} />
       ) : flow === 'presets' && !guideId ? (
-        <Library locale={locale} onLocale={changeLocale} onFamily={createFamily}
+        <Library locale={locale} onFamily={createFamily}
           demoHdmi2={new URLSearchParams(window.location.search).get('demo') === 'hdmi-2'} />
       ) : flow === 'family' && !guideId ? (
         <Suspense fallback={<p role="status">{FAMILY[locale].wait}</p>}><FamilyGuides locale={locale} seed={seed} /></Suspense>
       ) : result.ok ? (
         <Player key={result.guide.id} guide={result.guide} device={result.device} locale={locale} t={t} />
       ) : result.reason === 'missing' ? (
-        <GuidePicker locale={locale}><GuideList locale={locale} /></GuidePicker>
+        <GuidePicker locale={locale} onPhoto={openPhoto} />
       ) : (
         <main className="flow message">
           {result.reason === 'unknown' ? (
@@ -123,7 +138,9 @@ export function App() {
           <GuideList locale={locale} />
         </main>
       )}
-      <footer className="photo-credit"><a href="./photo-credit.txt" referrerPolicy="no-referrer">{locale === 'ml' ? 'പരിശീലന ഫോട്ടോയുടെ കടപ്പാട്' : 'Practice photo credit'}</a></footer>
+      {hasPhotoCredit && !home && <footer className="photo-credit">
+        <a href="./photo-credit.txt">{locale === 'ml' ? 'പരിശീലന ഫോട്ടോയുടെ കടപ്പാട്' : 'Practice photo credit'}</a>
+      </footer>}
     </div>
   );
 }

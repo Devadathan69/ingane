@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+.ingane-private
+**/.ingane-private/**
+tmp
+public/devices/*
+!public/devices/coolux-practice.jpg
+dist
+build

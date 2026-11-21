@@ -1,15 +1,21 @@
 import { bboxErrors, GuideResult, MALAYALAM_SCRIPT, type GuideResult as Result } from '../shared/guide';
+import { languages, type GuideLanguage } from '../shared/languages';
 import { findReference } from './references';
 
 /**
  * Final gate before anything reaches the client. Returns human-readable errors; empty means valid.
  * screenLabels: exact labels read from the user's TV-screen photo in this request (if any).
  */
+const nativeScript: Partial<Record<GuideLanguage, RegExp>> = { ml: MALAYALAM_SCRIPT, hi: /\p{Script=Devanagari}/u, ta: /\p{Script=Tamil}/u, kn: /\p{Script=Kannada}/u, te: /\p{Script=Telugu}/u };
+
 export function validateGuideResult(result: unknown, ctx: { screenLabels: string[] }): string[] {
   const parsed = GuideResult.safeParse(result);
   if (!parsed.success) return parsed.error.issues.map((i) => `schema: ${i.path.join('.')}: ${i.message}`);
   const r: Result = parsed.data;
   const errors: string[] = [];
+  const script = nativeScript[r.locale];
+  const reply = r.clarification?.question ?? r.unsupportedReason;
+  if (script && reply && !script.test(reply)) errors.push(`reply must be in ${languages[r.locale].name} script`);
 
   const ids = new Set<string>();
   for (const c of r.observedControls) {
@@ -42,11 +48,12 @@ export function validateGuideResult(result: unknown, ctx: { screenLabels: string
       if (s.controlId && !ids.has(s.controlId)) errors.push(`${at}: controlId "${s.controlId}" is not an observed control`);
       if (s.screenLabel) {
         if (!ctx.screenLabels.includes(s.screenLabel)) errors.push(`${at}: screenLabel "${s.screenLabel}" was not seen on the TV screen`);
+        if (!s.narration.includes(s.screenLabel)) errors.push(`${at}: narration must contain the exact label`);
         if (!s.instruction.includes(s.screenLabel)) errors.push(`${at}: instruction must contain the exact label "${s.screenLabel}"`);
       }
-      if (r.locale === 'ml') {
+      if (script) {
         for (const k of ['instruction', 'narration', 'expectedState', 'mismatchRecovery'] as const) {
-          if (!MALAYALAM_SCRIPT.test(s[k])) errors.push(`${at}: ${k} must be in Malayalam script`);
+          if (!script.test(s[k])) errors.push(`${at}: ${k} must be in ${languages[r.locale].name} script`);
         }
       }
     }

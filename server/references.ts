@@ -28,10 +28,10 @@ export const REFERENCES: Reference[] = [
     tasks: ['restore_sound'],
     requiresAnyRole: ['mute', 'volume_up'],
     content:
-      'On almost every TV remote, a button printed with a crossed-out speaker toggles mute, and a button ' +
-      'printed with + next to a speaker (or VOL +) raises the volume. Pressing either usually shows a volume ' +
-      'bar or speaker icon on the TV. If a crossed-out speaker icon is on screen, press Mute once; otherwise ' +
-      'press Volume + a few times, one press at a time. This only applies when those printed symbols are clearly visible.',
+      'A dedicated key labelled MUTE or marked with a crossed-out speaker toggles mute. When the viewer ' +
+      'reports that the TV is muted, press that visible key once and check whether sound returns or the mute ' +
+      'indicator clears. A key marked VOL + raises volume. If the starting state is unclear, ask what the ' +
+      'TV shows. Volume markings alone do not establish a push-in or double-press mute gesture.',
   },
   {
     id: 'generic-home',

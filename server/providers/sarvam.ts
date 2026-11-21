@@ -1,4 +1,5 @@
 import { SarvamAIClient, SarvamAIError, SarvamAITimeoutError, type SarvamAI } from 'sarvamai';
+import { languages } from '../../shared/languages';
 import type { GuideLocale } from '../../shared/guide';
 import { ProviderError, type SpeechProviders } from './types';
 
@@ -6,11 +7,6 @@ export interface TtsConfig {
   model: SarvamAI.TextToSpeechModel;
   speaker: SarvamAI.TextToSpeechSpeaker;
 }
-
-const LANG: Record<GuideLocale, 'ml-IN' | 'en-IN'> = { ml: 'ml-IN', en: 'en-IN' };
-
-/** Terms we want Saaras to keep in Latin script when people say them inside Malayalam. */
-const KEYTERMS = ['HDMI', 'HDMI 1', 'HDMI 2', 'Input', 'Source', 'Volume', 'Mute', 'Home', 'Netflix', 'YouTube', 'OK', 'TV', 'remote'];
 
 function toError(err: unknown, what: string): ProviderError {
   if (err instanceof ProviderError) return err;
@@ -45,8 +41,7 @@ export function createSarvamProviders(opts: {
           {
             file: { data: audio.bytes, filename: 'request', contentType: audio.mime },
             model: opts.sttModel,
-            language_code: LANG[locale],
-            ...(opts.sttModel === 'saaras:v4' ? { keyterms: KEYTERMS } : {}),
+            language_code: languages[locale].code,
           },
           { abortSignal: signal },
         );
@@ -63,7 +58,7 @@ export function createSarvamProviders(opts: {
           const res = await client.textToSpeech.convert(
             {
               text,
-              language_code: LANG[locale],
+              language_code: languages[locale].code,
               model: cfg.model,
               speaker: cfg.speaker,
               pace: 0.95,

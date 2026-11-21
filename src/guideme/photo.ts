@@ -21,7 +21,7 @@ export class PhotoError extends Error {
 }
 
 export const PHOTO_LIMITS = { maxInputBytes: 25 * 1024 * 1024, maxSide: 1600, minSide: 200, quality: 0.85 };
-/** Calibrated in scripts/e2e-v2.mjs using sharp and blurred remote photographs. */
+/** Calibrated against the sharp and blurred remote fixtures used by the photo flow. */
 export const BLUR_THRESHOLD = 60;
 
 const isHeic = (f: File) => /hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name);

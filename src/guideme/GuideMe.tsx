@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BBox, ClarificationAnswers, GuideResult, ObservedControl } from '../../shared/guide';
 import type { Locale } from '../data';
+import { guideLanguages, languages, isUiLocale, type GuideLanguage } from '../../shared/languages';
+import { PhotoInputs } from './PhotoInputs';
+import { GuidePlayer } from '../player/GuidePlayer';
 import { STRINGS } from '../i18n';
 import { RemoteImage } from '../player/RemoteImage';
-import { StepPlayer, type PlayerStep } from '../player/StepPlayer';
+import { type PlayerStep } from '../player/StepPlayer';
 import { ApiError, getHealth, requestGuide, speakUrl, transcribe, type Health } from './api';
 import { BLUR_THRESHOLD, normalizePhoto, PhotoError, type NormalizedPhoto, type PhotoErrorCode } from './photo';
 import { GM_STRINGS } from './strings';
@@ -12,7 +15,8 @@ import type { FamilySeed } from '../family/draft';
 import { FAMILY } from '../family/strings';
 import { FlowHeading, Icon } from '../ui/Icon';
 
-type Phase = 'start' | 'photo' | 'task' | 'working' | 'result' | 'error';
+type Phase = 'photo' | 'task' | 'working' | 'result' | 'error';
+type FlowError = { kind: 'timeout' } | { kind: 'other'; message: string };
 
 const PHOTO_ERR: Record<PhotoErrorCode, 'errNotImage' | 'errHeic' | 'errUnreadable' | 'errTooBig' | 'errTooSmall'> = {
   not_image: 'errNotImage',
@@ -44,32 +48,38 @@ export function toPlayerSteps(result: GuideResult): PlayerStep[] {
   });
 }
 
-function PhotoInputs({ onFile, camRef, galRef }: { onFile: (f: File) => void; camRef: React.RefObject<HTMLInputElement | null>; galRef: React.RefObject<HTMLInputElement | null> }) {
-  const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    if (f) onFile(f);
-  };
-  return (
-    <>
-      <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={pick} data-testid="camera-input" />
-      <input ref={galRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={pick} data-testid="gallery-input" />
-    </>
-  );
+function ScreenPhotoReview({ photo, locale, cancel, send }: {
+  photo: NormalizedPhoto; locale: Locale; cancel: () => void; send: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const g = GM_STRINGS[locale];
+  useEffect(() => { const el = dialog.current; el?.showModal(); return () => el?.close(); }, []);
+  return <dialog ref={dialog} lang={locale} className="screen-review" aria-labelledby="screen-review-title"
+    onCancel={e => { e.preventDefault(); cancel(); }}>
+    <div className="stack"><h2 id="screen-review-title">{g.screenPreview}</h2>
+      <img src={photo.url} alt={g.screenPreview} width={photo.width} height={photo.height} />
+      <p>{STRINGS[locale].localPhoto}</p>
+      <button className="btn btn-primary" onClick={send}>{g.sendScreen}</button>
+      <button className="btn btn-secondary" onClick={cancel}>{g.cancel}</button>
+    </div>
+  </dialog>;
 }
 
-export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLocale: (l: Locale) => void; onFamily?: (seed: FamilySeed) => void }) {
+export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; initialFile?: File; onFamily?: (seed: FamilySeed) => void }) {
   const g = GM_STRINGS[locale];
   const [health, setHealth] = useState<Health | null | undefined>(undefined);
-  const [phase, setPhase] = useState<Phase>('start');
+  const [phase, setPhase] = useState<Phase>('photo');
+  const [language, setLanguage] = useState<GuideLanguage>(locale);
   const [consent, setConsent] = useState(false);
   const [photo, setPhoto] = useState<NormalizedPhoto | null>(null);
+  const [pendingScreen, setPendingScreen] = useState<{ photo: NormalizedPhoto; answers: ClarificationAnswers } | null>(null);
+  const screenAnswers = useRef<ClarificationAnswers>({});
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [request, setRequest] = useState('');
   const [answers, setAnswers] = useState<ClarificationAnswers>({});
   const [result, setResult] = useState<GuideResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FlowError | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [guideKey, setGuideKey] = useState(0);
@@ -82,6 +92,8 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
   const lastPhase = useRef(phase);
   const lastScreen = useRef<Blob | undefined>(undefined);
   const holdStart = useRef(0);
+  const photoAttempt = useRef(0);
+  const transcribeAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     getHealth().then(setHealth);
@@ -93,39 +105,51 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
     headingRef.current?.focus();
   }, [phase]);
 
-  useEffect(() => () => abort.current?.abort(), []);
+  useEffect(() => () => { abort.current?.abort(); transcribeAbort.current?.abort(); photoAttempt.current++; }, []);
+  useEffect(() => () => { if (pendingScreen) URL.revokeObjectURL(pendingScreen.photo.url); }, [pendingScreen]);
+  useEffect(() => () => { if (photo) URL.revokeObjectURL(photo.url); }, [photo]);
+  useEffect(() => { if (initialFile) void onPhoto(initialFile); }, [initialFile]);
 
   const recorder = useRecorder(async (blob) => {
+    if (!consent) return;
+    const controller = new AbortController();
+    transcribeAbort.current = controller;
     setTranscribing(true);
     setVoiceError(null);
     try {
-      const text = await transcribe(blob, locale);
+      const text = await transcribe(blob, language, controller.signal, locale);
+      if (controller.signal.aborted) return;
       setRequest((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
       textRef.current?.focus();
     } catch (err) {
+      if (controller.signal.aborted) return;
       setVoiceError(err instanceof ApiError ? err.message : g.micFailed);
     } finally {
-      setTranscribing(false);
+      if (!controller.signal.aborted) setTranscribing(false);
     }
   });
 
   const onPhoto = async (file: File) => {
+    const attempt = ++photoAttempt.current;
     setPhotoBusy(true);
     setPhotoError(null);
     try {
       const p = await normalizePhoto(file);
-      if (photo) URL.revokeObjectURL(photo.url);
+      if (attempt !== photoAttempt.current) { URL.revokeObjectURL(p.url); return; }
+      setConsent(false);
+      lastScreen.current = undefined;
       setPhoto(p);
       setAnswers({});
     } catch (err) {
+      if (attempt !== photoAttempt.current) return;
       setPhotoError(g[PHOTO_ERR[err instanceof PhotoError ? err.code : 'unreadable']]);
     } finally {
-      setPhotoBusy(false);
+      if (attempt === photoAttempt.current) setPhotoBusy(false);
     }
   };
 
   const generate = async (nextAnswers: ClarificationAnswers = answers, screenImage?: Blob) => {
-    if (!photo) return;
+    if (!photo || !consent || !health?.guide) return;
     abort.current?.abort();
     const ctrl = new AbortController();
     abort.current = ctrl;
@@ -134,24 +158,28 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
     setPhase('working');
     setError(null);
     try {
-      const r = await requestGuide({ image: photo.blob, screenImage: screenImage ?? lastScreen.current, request: request.trim(), locale, answers: nextAnswers }, ctrl.signal);
+      const r = await requestGuide({ image: photo.blob, screenImage: screenImage ?? lastScreen.current, request: request.trim(), locale: language, appLocale: locale, answers: nextAnswers }, ctrl.signal);
       setResult(r);
       setGuideKey((k) => k + 1);
       setPhase('result');
     } catch (err) {
       if (ctrl.signal.aborted) return;
-      setError(err instanceof ApiError ? err.message : String(err));
+      const timedOut = err instanceof ApiError && err.code === 'timeout';
+      setError(timedOut ? { kind: 'timeout' } : { kind: 'other', message: err instanceof ApiError ? err.message : String(err) });
       setPhase('error');
     }
   };
 
-  const onScreenPhoto = async (file: File, extra: ClarificationAnswers = {}) => {
+  const onScreenPhoto = async (file: File) => {
+    const attempt = ++photoAttempt.current;
+    const next = { ...answers, ...screenAnswers.current };
+    screenAnswers.current = {};
     try {
       const p = await normalizePhoto(file);
-      URL.revokeObjectURL(p.url);
-      await generate({ ...answers, ...extra }, p.blob);
+      if (attempt !== photoAttempt.current) { URL.revokeObjectURL(p.url); return; }
+      setPendingScreen({ photo: p, answers: next });
     } catch (err) {
-      setError(g[PHOTO_ERR[err instanceof PhotoError ? err.code : 'unreadable']]);
+      setError({ kind: 'other', message: g[PHOTO_ERR[err instanceof PhotoError ? err.code : 'unreadable']] });
       setPhase('error');
     }
   };
@@ -160,62 +188,24 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
     abort.current?.abort();
     setPhase('photo');
     setResult(null);
+    setConsent(false);
+    setPhoto(null);
     setAnswers({});
     lastScreen.current = undefined;
     setRequest('');
   };
 
-  if (!health?.guide) {
-    return (
-      <main className="flow">
-        <FlowHeading icon="camera" title={g.title} />
-        {health === undefined ? <p role="status">{g.checking}</p> : (
-          <div className="stack">
-            <p role="alert" className="catalog-empty">{health === null ? g.serverMissing : g.guideUnconfigured}</p>
-            <button type="button" className="btn btn-secondary" onClick={() => { setHealth(undefined); getHealth().then(setHealth); }}>{g.tryAgain}</button>
-            <a className="btn btn-primary" href={`?flow=presets&lang=${locale}`}><Icon name="library" />{g.readyMade}</a>
-          </div>
-        )}
-      </main>
-    );
-  }
-
-  const screenInput = (extra?: ClarificationAnswers) => (
+  const screenInput = () => (<>
     <input ref={screenRef} type="file" accept="image/*" capture="environment" hidden data-testid="screen-input"
       onChange={(e) => {
         const f = e.target.files?.[0];
         e.target.value = '';
-        if (f) onScreenPhoto(f, extra);
+        if (f) void onScreenPhoto(f);
       }}
     />
-  );
-
-  if (phase === 'start') {
-    return (
-      <main className="flow">
-        <FlowHeading icon="camera" title={g.title} headingRef={headingRef} />
-        <fieldset className="lang-choice">
-          <legend>{g.chooseLanguage}</legend>
-          {(['ml', 'en'] as const).map((l) => (
-            <button key={l} type="button" lang={l} aria-pressed={locale === l} className={`btn ${locale === l ? 'btn-primary' : 'btn-secondary'}`} onClick={() => onLocale(l)}>
-              {l === 'ml' ? 'മലയാളം' : 'English'}
-            </button>
-          ))}
-        </fieldset>
-        <section className="consent" aria-labelledby="consent-title">
-          <h2 id="consent-title">{g.consentTitle}</h2>
-          <p>{health.demo ? g.consentDemo : g.consentBody}</p>
-          {health.speech && !health.demo && <p>{g.consentVoice}</p>}
-          <label className="check">
-            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-            <span>{g.consentCheck}</span>
-          </label>
-        </section>
-        {health?.demo && <p className="badge badge-demo">⚠ {g.demoBadge}</p>}
-        <button type="button" className="btn btn-primary" disabled={!consent} onClick={() => setPhase('photo')}>{g.continue}</button>
-      </main>
-    );
-  }
+    {pendingScreen && <ScreenPhotoReview photo={pendingScreen.photo} locale={locale} cancel={() => setPendingScreen(null)}
+      send={() => { void generate(pendingScreen.answers, pendingScreen.photo.blob); setPendingScreen(null); }} />}
+  </>);
 
   if (phase === 'photo') {
     const blurry = photo && photo.sharpness < BLUR_THRESHOLD;
@@ -223,6 +213,11 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
       <main className="flow">
         <FlowHeading icon="camera" title={g.photoTitle} headingRef={headingRef} />
         <PhotoInputs onFile={onPhoto} camRef={camRef} galRef={galRef} />
+        {health !== undefined && !health?.guide && <div className="stack">
+          <p role="alert" className="catalog-empty">{health === null ? g.serverMissing : g.guideUnconfigured}</p>
+          <button className="btn btn-secondary" onClick={() => { setHealth(undefined); getHealth().then(setHealth); }}>{g.tryAgain}</button>
+          <a className="btn btn-secondary" href={`?flow=presets&lang=${locale}`}>{g.readyMade}</a>
+        </div>}
         {photoBusy && <p role="status">{g.processing}</p>}
         {photoError && <p className="error-box" role="alert">{photoError}</p>}
         {photo ? (
@@ -231,9 +226,10 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
               <RemoteImage src={photo.url} width={photo.width} height={photo.height} alt={g.photoTitle} failedText={g.errUnreadable} hint="" frameWidth="100%" />
             </div>
             {blurry && <p className="warn-box" role="alert" data-testid="blur-warning">{g.blurry}</p>}
-            <div className="nav-row">
-              <button type="button" className="btn btn-secondary" onClick={() => camRef.current?.click()}>↺ {g.retake}</button>
-              <button type="button" className="btn btn-primary" onClick={() => setPhase('task')}>{blurry ? g.useAnyway : g.usePhoto}</button>
+            <div className="stack">
+              <button type="button" className="btn btn-primary" disabled={photoBusy} onClick={() => setPhase('task')}>{blurry ? g.useAnyway : g.usePhoto}</button>
+              <button className="btn btn-secondary" onClick={() => camRef.current?.click()}>{g.retake}</button>
+              <button className="btn btn-secondary" onClick={() => galRef.current?.click()}>{STRINGS[locale].choosePhoto}</button>
             </div>
           </>
         ) : (
@@ -245,22 +241,35 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
             </div>
           </section>
         )}
+        <a className="btn btn-secondary" href={`?lang=${locale}`}>{g.cancel}</a>
       </main>
     );
   }
 
   if (phase === 'task') {
     const rec = recorder.state;
+    const speechInput = health?.speech && languages[language].stt;
     return (
       <main className="flow">
         <FlowHeading icon="mic" title={g.taskTitle} description={g.taskHelp} headingRef={headingRef} />
-        {health.speech && rec !== 'unsupported' && (
+        <label className="field">{g.chooseLanguage}<select value={language} disabled={transcribing || rec === 'recording' || rec === 'starting'}
+          onChange={e => setLanguage(e.target.value as GuideLanguage)}>
+          {guideLanguages.map(l => <option lang={l} key={l} value={l}>{languages[l].native}</option>)}
+        </select></label>
+        {health?.guide ? <section className="consent" aria-label={g.consentTitle}>
+          <p>{health.demo ? g.consentDemo : g.consentBody}</p>
+          {health.speech && !health.demo && <p>{g.consentVoice}</p>}
+          <label className="check"><input type="checkbox" checked={consent} disabled={transcribing || rec === 'recording' || rec === 'starting'}
+            onChange={e => setConsent(e.target.checked)} />{g.consentCheck}</label>
+        </section> : <div className="stack"><p role="status">{health === undefined ? g.checking : health === null ? g.serverMissing : g.guideUnconfigured}</p>
+          <button className="btn btn-secondary" onClick={() => getHealth().then(setHealth)}>{g.tryAgain}</button></div>}
+        {speechInput && rec !== 'unsupported' && (
           <button
             type="button"
             className={`btn btn-mic ${rec === 'recording' ? 'is-recording' : ''}`}
-            aria-disabled={transcribing || rec === 'starting'}
+            disabled={!consent} aria-disabled={!consent || transcribing || rec === 'starting'}
             onPointerDown={(e) => {
-              if (e.button !== 0 || transcribing) return;
+              if (e.button !== 0 || transcribing || rec === 'starting') return;
               if (rec === 'recording') return recorder.stop();
               holdStart.current = Date.now();
               recorder.start();
@@ -269,7 +278,7 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
               if (rec === 'recording' && Date.now() - holdStart.current > 500) recorder.stop();
             }}
             onClick={(e) => {
-              if (e.detail !== 0 || transcribing) return; // keyboard activation toggles
+              if (e.detail !== 0 || transcribing || rec === 'starting') return; // keyboard activation toggles
               if (rec === 'recording') recorder.stop();
               else recorder.start();
             }}
@@ -280,17 +289,17 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
         <div role="status" aria-live="polite">
           {transcribing && <p>{g.transcribing}</p>}
           {rec === 'denied' && <p className="warn-box">{g.micDenied}</p>}
-          {!health.speech && <p className="muted">{g.typeOnly}</p>}
-          {health.speech && rec === 'unsupported' && <p className="muted">{g.micUnsupported}</p>}
+          {!speechInput && <p className="muted">{g.typeOnly}</p>}
+          {speechInput && rec === 'unsupported' && <p className="muted">{g.micUnsupported}</p>}
           {(rec === 'failed' || voiceError) && <p className="warn-box">{voiceError ?? g.micFailed}</p>}
         </div>
         <label className="field">
           <span>{g.transcriptLabel}</span>
-          <textarea ref={textRef} value={request} maxLength={500} rows={3} lang={locale} onChange={(e) => setRequest(e.target.value)} />
+          <textarea ref={textRef} value={request} maxLength={500} rows={3} lang={language} onChange={(e) => setRequest(e.target.value)} />
         </label>
         <div className="nav-row">
-          <button type="button" className="btn btn-secondary" onClick={() => setPhase('photo')}>← {g.backToPhoto}</button>
-          <button type="button" className="btn btn-primary" disabled={!request.trim() || transcribing || rec === 'recording'} onClick={() => generate({})}>{g.generate}</button>
+          <button type="button" className="btn btn-secondary" disabled={transcribing || rec === 'recording' || rec === 'starting'} onClick={() => setPhase('photo')}>← {g.backToPhoto}</button>
+          <button type="button" className="btn btn-primary" disabled={!health?.guide || !consent || !request.trim() || transcribing || rec === 'recording' || rec === 'starting'} onClick={() => generate({})}>{g.generate}</button>
         </div>
       </main>
     );
@@ -309,8 +318,8 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
   if (phase === 'error') {
     return (
       <main className="flow">
-        <FlowHeading icon="camera" title={g.errorTitle} headingRef={headingRef} />
-        <p className="error-box" role="alert">{error}</p>
+        <FlowHeading icon="camera" title={error?.kind === 'timeout' ? g.timeoutTitle : g.errorTitle} headingRef={headingRef} />
+        <p className="error-box" role="alert">{error?.kind === 'timeout' ? g.timeoutRetry : error?.message}</p>
         <div className="stack">
           <button type="button" className="btn btn-primary" onClick={() => generate()}>{g.tryAgain}</button>
           <button type="button" className="btn btn-secondary" onClick={() => setPhase('task')}>← {g.taskTitle}</button>
@@ -322,14 +331,14 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
 
   if (!result || !photo) return null;
   const rl = result.locale;
-  const rg = GM_STRINGS[rl];
+  const rg = GM_STRINGS[locale];
 
   if (result.status === 'ready') {
     const narrationById = new Map(result.steps.map((s) => [s.id, s.narration]));
     return (
       <div lang={rl}>
         {screenInput()}
-        <StepPlayer
+        <GuidePlayer
           key={guideKey}
           title={result.task.summary || rg.title}
           subtitle={result.deviceCandidates[0]?.family ?? ''}
@@ -337,16 +346,15 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
           steps={toPlayerSteps(result)}
           image={{ src: photo.url, width: photo.width, height: photo.height, alt: rg.photoTitle, frameWidth: '100%' }}
           locale={rl}
-          t={STRINGS[rl]}
-          labels={{ no: rg.screenNo }}
+          labels={isUiLocale(rl) ? { no: GM_STRINGS[rl].screenNo } : undefined}
           controls={result.observedControls.filter(c => c.display === 'box').map(c => c.bbox)}
-          speak={health?.speech && !health.demo ? (step) => speakUrl(rl, narrationById.get(step.id) ?? step.instruction, result.narrationTokens[step.id] ?? '') : undefined}
+          speak={health?.speech && !health.demo && languages[rl].tts ? (step) => speakUrl(rl, narrationById.get(step.id) ?? step.instruction, result.narrationTokens[step.id] ?? '') : undefined}
           mismatchExtra={(step) => (
             <button
-              type="button"
+              type="button" lang={locale}
               className="btn btn-secondary"
               onClick={() => {
-                setAnswers((a) => ({ ...a, mismatch: { stepId: step.id, expected: step.expected.slice(0, 300) } }));
+                screenAnswers.current = { mismatch: { stepId: step.id, expected: step.expected.slice(0, 300) } };
                 screenRef.current?.click();
               }}
             >
@@ -354,7 +362,7 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
             </button>
           )}
           footer={
-            <>
+            <div lang={locale}>
               {result.evidenceRefs.length > 0 && (
                 <p className="evidence">
                   {rg.basedOn}: {result.evidenceRefs.map((r) => r.title).join(' · ')}
@@ -362,8 +370,8 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
               )}
               <button type="button" className="btn btn-secondary wide" onClick={startOver}>↺ {rg.startOver}</button>
               {onFamily && <button type="button" className="btn btn-secondary wide"
-                onClick={() => onFamily({ source: 'session', result, photo })}>{FAMILY[rl].create}</button>}
-            </>
+                onClick={() => onFamily({ source: 'session', result, photo })}>{FAMILY[locale].create}</button>}
+            </div>
           }
         />
       </div>
@@ -372,10 +380,10 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
 
   if (result.status === 'unsupported') {
     return (
-      <main className="flow" lang={rl}>
+      <main className="flow" lang={locale}>
         <FlowHeading icon="camera" title={rg.unsupportedTitle} headingRef={headingRef} />
         {result.demo && <p className="badge badge-demo">⚠ {rg.demoBadge}</p>}
-        <p className="warn-box" role="alert">{result.unsupportedReason}</p>
+        <p className="warn-box" role="alert" lang={rl}>{result.unsupportedReason}</p>
         <div className="stack">
           <button type="button" className="btn btn-primary" onClick={() => setPhase('task')}>← {rg.taskTitle}</button>
           <button type="button" className="btn btn-secondary" onClick={startOver}>↺ {rg.startOver}</button>
@@ -388,10 +396,11 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
     <Clarify
       key={guideKey}
       result={result}
+      locale={locale}
       photo={photo}
       headingRef={headingRef}
       screenInput={screenInput()}
-      onScreenPhoto={() => screenRef.current?.click()}
+      onScreenPhoto={() => { screenAnswers.current = {}; screenRef.current?.click(); }}
       onRetake={() => { setAnswers({}); setPhase('photo'); }}
       onAnswer={(a) => generate({ ...answers, ...a, confirmedControlIds: [...(answers.confirmedControlIds ?? []), ...(a.confirmedControlIds ?? [])], rejectedControlIds: [...(answers.rejectedControlIds ?? []), ...(a.rejectedControlIds ?? [])], textOnlyControlIds: [...(answers.textOnlyControlIds ?? []), ...(a.textOnlyControlIds ?? [])], userControls: [...(answers.userControls ?? []), ...(a.userControls ?? [])] })}
       onStartOver={startOver}
@@ -399,8 +408,9 @@ export function GuideMe({ locale, onLocale, onFamily }: { locale: Locale; onLoca
   );
 }
 
-function Clarify({ result, photo, headingRef, screenInput, onScreenPhoto, onRetake, onAnswer, onStartOver }: {
+function Clarify({ result, locale, photo, headingRef, screenInput, onScreenPhoto, onRetake, onAnswer, onStartOver }: {
   result: GuideResult;
+  locale: Locale;
   photo: NormalizedPhoto;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   screenInput: React.ReactNode;
@@ -409,7 +419,7 @@ function Clarify({ result, photo, headingRef, screenInput, onScreenPhoto, onReta
   onAnswer: (a: ClarificationAnswers) => void;
   onStartOver: () => void;
 }) {
-  const g = GM_STRINGS[result.locale];
+  const g = GM_STRINGS[locale];
   const c = result.clarification!;
   const [text, setText] = useState('');
   const [marking, setMarking] = useState(false);
@@ -417,10 +427,10 @@ function Clarify({ result, photo, headingRef, screenInput, onScreenPhoto, onReta
   const control: ObservedControl | undefined = c.controlId ? result.observedControls.find((x) => x.id === c.controlId) : undefined;
 
   return (
-    <main className="flow" lang={result.locale}>
+    <main className="flow" lang={locale}>
       <FlowHeading icon="camera" title={g.clarifyTitle} headingRef={headingRef} />
       {result.demo && <p className="badge badge-demo">⚠ {g.demoBadge}</p>}
-      <p className="question" role="alert">{c.question}</p>
+      <p className="question" role="alert" lang={result.locale}>{c.question}</p>
       {screenInput}
 
       {c.kind === 'clearer_photo' && (

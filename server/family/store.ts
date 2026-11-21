@@ -6,6 +6,17 @@ export const digest = (value: string) => createHash('sha256').update(value).dige
 export const SHARE_LIFETIME = 7 * 24 * 60 * 60 * 1000;
 export class FamilyConflict extends Error {}
 export class FamilyNotFound extends Error {}
+export class FamilyLimit extends Error {}
+export class IncompleteUpload extends Error {}
+
+type Result<T> = T | Promise<T>;
+export interface FamilyRepository {
+  list(owner: string): Result<{ id: string; revision: number; expires: number; title: string; active: boolean }[]>;
+  publish(owner: string, id: string, revision: number, snapshot: FamilySnapshot, photo: Buffer, clips: Map<string, Buffer>):
+    Result<{ token: string; revision: number; expires: number }>;
+  revoke(owner: string, id: string, revision: number): Result<void>;
+  read(token: string, part: 'snapshot' | 'photo' | 'clip', step?: string): Result<string | Uint8Array | undefined>;
+}
 
 export class FamilyStore {
   constructor(private db: DatabaseSync, private now: () => number = Date.now) {

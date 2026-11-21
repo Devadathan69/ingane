@@ -3,6 +3,7 @@ import { presetText, stepsFor } from '../data/presets/catalog';
 import { REGISTRY_VERSION, type CatalogEntry, type CatalogScope, type TaskGuide } from '../data/presets/types';
 import type { Locale } from '../data/types';
 import { getHealth, speakPresetUrl } from '../guideme/api';
+import { FAMILY } from '../family/strings';
 import { STRINGS } from '../i18n';
 import { StepPlayer } from '../player/StepPlayer';
 import { PRESET_STRINGS } from './strings';
@@ -13,11 +14,13 @@ interface Props {
   scope: CatalogScope;
   port: string | null;
   locale: Locale;
+  appLocale?: Locale;
+  onFamily?: () => void;
   onRecheck: () => void;
   onTasks: () => void;
 }
 
-export function PresetPlayer({ entry, guide, scope, port, locale, onRecheck, onTasks }: Props) {
+export function PresetPlayer({ entry, guide, scope, port, locale, appLocale = locale, onFamily, onRecheck, onTasks }: Props) {
   const s = PRESET_STRINGS[locale];
   const t = STRINGS[locale];
   const { remote, tv } = entry;
@@ -30,8 +33,8 @@ export function PresetPlayer({ entry, guide, scope, port, locale, onRecheck, onT
     return () => { active = false; };
   }, []);
   const steps = stepsFor(guide, port);
-  if (!steps?.length) return <main className="flow"><p role="alert">{s.noResults}</p><PhotoLink locale={locale} /></main>;
-  return <StepPlayer
+  if (!steps?.length) return <main className="flow"><p role="alert">{s.noResults}</p><PhotoLink locale={appLocale} /></main>;
+  return <div lang={locale}><StepPlayer
     title={presetText(guide.playTitle ?? guide.title, locale, port)}
     subtitle={[tv.modelCode, remote.partNumber, guide.playTitle ? null : port].filter(Boolean).join(' · ')}
     subtitleInDetails
@@ -55,10 +58,11 @@ export function PresetPlayer({ entry, guide, scope, port, locale, onRecheck, onT
     speak={hasSpeech ? step => speakPresetUrl(locale, { version: REGISTRY_VERSION, scope, guideId: guide.id, stepId: step.id, port }) : undefined}
     mismatchExtra={() => <>
       <button className="btn btn-secondary" type="button" onClick={onRecheck}>{s.recheck}</button>
-      <PhotoLink locale={locale} />
+      <PhotoLink locale={appLocale} />
     </>}
-    footer={<button className="btn btn-secondary wide" type="button" onClick={onTasks}>{s.otherTask}</button>}
-  />;
+    footer={<><button className="btn btn-secondary wide" type="button" onClick={onTasks}>{s.otherTask}</button>
+      {onFamily && <button lang={appLocale} className="btn btn-secondary wide" type="button" onClick={onFamily}>{FAMILY[appLocale].create}</button>}</>}
+  /></div>;
 }
 
 export function PhotoLink({ locale, reason }: { locale: Locale; reason?: string }) {

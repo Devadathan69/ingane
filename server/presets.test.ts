@@ -146,7 +146,7 @@ describe('preset narration', () => {
   it('rejects stale versions, wrong collections, unknown steps, unrelated ports and client-supplied speech', async () => {
     const app = createApp({ config: loadConfig({ INGANE_PROVIDER: 'mock' }) });
     for (const changes of [
-      { version: 0 }, { version: 1 }, { scope: 'device-verified' }, { scope: 'draft' }, { guideId: 'samsung-in-qa55q60daulxl' },
+      { version: 0 }, { scope: 'device-verified' }, { scope: 'draft' }, { guideId: 'samsung-in-qa55q60daulxl' },
       { stepId: 'bogus' }, { port: null }, { port: 'my own speech' }, { port: 'HDMI 1', stepId: 'focus-second' },
       { guideId: 'demo-unmute', stepId: 'unmute', port: 'HDMI 2' },
     ]) expect((await speak(app, { locale: 'en', preset: { ...selection, ...changes } })).status).toBe(403);
