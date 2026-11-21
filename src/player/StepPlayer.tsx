@@ -34,6 +34,7 @@ export interface StepPlayerProps {
   steps: PlayerStep[];
   image: { src: string; width: number; height: number; alt: string; frameWidth?: string };
   locale: GuideLanguage;
+  contentLocale?: GuideLanguage;
   t: Strings;
   labels?: { yes?: string; no?: string };
   /** On-demand narration (V2). Returns a playable URL; callers cache per session. */
@@ -47,7 +48,7 @@ export interface StepPlayerProps {
 
 const BADGE_ICON = { sample: '⚠', verified: '✓', demo: '⚠', live: 'ⓘ' } as const;
 
-export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, steps, image, locale, t, labels, speak, mismatchExtra, footer, legacy = false, controls }: StepPlayerProps) {
+export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, steps, image, locale, contentLocale, t, labels, speak, mismatchExtra, footer, legacy = false, controls }: StepPlayerProps) {
   const total = steps.length;
   const reducer = useMemo(() => progressReducer(total), [total]);
   const [state, dispatch] = useReducer(reducer, START);
@@ -128,18 +129,18 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
   const beforeText = (
     state.index === 0 && before && (
       <p className="before">
-        <strong>{t.beforeYouStart}:</strong> {before}
+        <strong>{t.beforeYouStart}:</strong> <span lang={contentLocale}>{before}</span>
       </p>
     )
   );
   const instruction = (
-    <><p className="instruction">{step.instruction}</p>
+    <><p className="instruction" lang={contentLocale}>{step.instruction}</p>
     {step.screenLabel && <p className="expected-text"><bdi>{step.screenLabel}</bdi></p>}</>
   );
   const buttonName = (
     step.button && (
       <p className="button-name">
-        <span className="label">{t.press}:</span> <strong>{step.button}</strong>
+        <span className="label">{t.press}:</span> <strong lang={contentLocale}>{step.button}</strong>
       </p>
     )
   );
@@ -175,7 +176,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
   const expected = (
     <div className="expected">
       <p className={legacy ? 'label' : 'sr-only'}>{legacy ? t.expectedLabel + ':' : t.onTv}</p>
-      <p className="expected-text">{step.expected}</p>
+      <p className="expected-text" lang={contentLocale}>{step.expected}</p>
     </div>
   );
   const back = <button type="button" className="btn btn-secondary" onClick={() => dispatch({ type: 'back' })} disabled={state.index === 0}>
@@ -191,7 +192,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
     state.mismatch ? (
       <div className="recovery" role="group" aria-labelledby="recovery-title">
         <h3 id="recovery-title" ref={legacy ? undefined : recoveryHeading} tabIndex={legacy ? undefined : -1}>{t.mismatchTitle}</h3>
-        <p>{step.recovery}</p>
+        <p lang={contentLocale}>{step.recovery}</p>
         <p className="recovery-note">{t.mismatchNote}</p>
         <button type="button" className="btn btn-primary" onClick={() => dispatch({ type: 'retry' })}>
           {t.retry}
@@ -204,7 +205,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
       </div>
     ) : (
       <div className="answer">
-        <button type="button" className="btn btn-yes" onClick={() => dispatch({ type: 'confirm' })}>
+        <button type="button" className="btn btn-yes" lang={step.confirmation ? contentLocale : undefined} onClick={() => dispatch({ type: 'confirm' })}>
           {legacy && <span aria-hidden="true">✓</span>} {step.confirmation ?? labels?.yes ?? t.yes}
           {!legacy && <Icon name="arrow" />}
         </button>
@@ -226,7 +227,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
     </div>
   );
 
-  const titleBlock = <h1 id="guide-title" className="guide-title">{title}</h1>;
+  const titleBlock = <h1 id="guide-title" className="guide-title" lang={contentLocale}>{title}</h1>;
   const statusBadge = badge && <div className={`badge badge-${badge.tone}`}>
     {legacy && <><span aria-hidden="true">{BADGE_ICON[badge.tone]}</span>{' '}</>}{badge.text}
   </div>;
@@ -247,7 +248,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
             {t.doneTitle}
           </h2>
           <p className="done-body">{t.doneBody}</p>
-          <p className="expected-final">{steps[total - 1].expected}</p>
+          <p className="expected-final" lang={contentLocale}>{steps[total - 1].expected}</p>
           <div className="nav-row">
             <button type="button" className="btn btn-secondary" onClick={() => dispatch({ type: 'back' })}>
               ← {t.back}
@@ -266,7 +267,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
           {photo}
           <div className="walk-paper">
             {progress}
-            <p className="walk-button">{step.button || t.checkpoint}</p>
+            <p className="walk-button" lang={step.button ? contentLocale : undefined}>{step.button || t.checkpoint}</p>
             {instruction}{expected}{actions}
             {listen}
           </div>
@@ -276,8 +277,8 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
       {!legacy && <div className="walk-footer">
         {(before || badge?.note || (subtitleInDetails && subtitle) || (!state.done && step.buttonDescription)) && <details className="walk-context">
           <summary>{t.beforeYouStart}</summary>{subtitleInDetails && subtitle && <p className="device-name">{subtitle}</p>}
-          {before && <p>{before}</p>}{badge?.note && <p>{badge.note}</p>}
-          {!state.done && step.buttonDescription && <p>{step.buttonDescription}</p>}
+          {before && <p lang={contentLocale}>{before}</p>}{badge?.note && <p>{badge.note}</p>}
+          {!state.done && step.buttonDescription && <p lang={contentLocale}>{step.buttonDescription}</p>}
         </details>}
         {!state.done && !state.mismatch && <button type="button" className="btn walk-restart" onClick={() => dispatch({ type: 'restart' })}>{t.restart}</button>}
       </div>}

@@ -28,6 +28,4 @@ export default {
   guidesNote: 'बटन आप दबाते हैं। इंगने आपको उसका स्थान दिखाता है।',
   photoHint: 'पूरा रिमोट देखने के लिए तस्वीर स्क्रॉल करें।',
   ringLegend: 'पीला घेरा बटन दिखाता है।',
-  practice: 'अभ्यास गाइड',
-  fromPhoto: 'आपकी तस्वीर से बनी गाइड',
 } satisfies ReaderCopy;

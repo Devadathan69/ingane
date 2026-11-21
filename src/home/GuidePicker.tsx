@@ -1,3 +1,6 @@
+import { tvBrands } from '../data/brand-guides';
+import { BrandTiles } from '../presets/BrandTiles';
+import { PRESET_STRINGS } from '../presets/strings';
 import { useRef } from 'react';
 import type { Locale } from '../data';
 import { hdmiDemo } from '../data/presets/catalog';
@@ -48,6 +51,10 @@ export function GuidePicker({ locale, onPhoto }: { locale: Locale; onPhoto: (fil
       <a className="route-card" href={`?flow=presets&lang=${locale}`}><span className="icon-tile"><Icon name="guide" /></span><strong>{t.browse}</strong><Icon name="arrow" /></a>
       <a className="route-card" href={`?flow=family&lang=${locale}`}><span className="icon-tile"><Icon name="family" /></span><strong>{t.createForSomeone}</strong><Icon name="arrow" /></a>
     </nav>
+    <section className="picker-brands" aria-labelledby="home-brands">
+      <h2 id="home-brands">{PRESET_STRINGS[locale].brand}</h2>
+      <BrandTiles compact brands={tvBrands} locale={locale} />
+    </section>
     {practice && <a className="practice-link" href={`?flow=presets&demo=hdmi-2&lang=${locale}`}>{t.tryDemo}</a>}
   </main>;
 }

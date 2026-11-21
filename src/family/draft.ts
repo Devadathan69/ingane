@@ -3,7 +3,7 @@ import type { GuideLanguage } from '../../shared/languages';
 import type { GuideResult } from '../../shared/guide';
 import { presetText, stepsFor } from '../data/presets/catalog';
 import type { CatalogEntry, TaskGuide } from '../data/presets/types';
-import type { Locale } from '../data/types';
+import type { AuthoredLocale } from '../../shared/languages';
 import type { NormalizedPhoto } from '../guideme/photo';
 
 export interface FamilyDraft {
@@ -12,7 +12,7 @@ export interface FamilyDraft {
 }
 export type DraftChange = FamilyDraft | ((current: FamilyDraft) => FamilyDraft);
 export type FamilySeed =
-  | { source: 'preset'; entry: CatalogEntry; guide: TaskGuide; port: string | null; locale: Locale }
+  | { source: 'preset'; entry: CatalogEntry; guide: TaskGuide; port: string | null; locale: AuthoredLocale }
   | { source: 'session'; result: GuideResult; photo: NormalizedPhoto };
 
 export const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');

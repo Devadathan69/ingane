@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { FamilySnapshot } from '../../shared/family';
-import { isUiLocale } from '../../shared/languages';
 import { GuidePlayer } from '../player/GuidePlayer';
 import { FAMILY } from './strings';
 
@@ -38,7 +37,7 @@ export function FamilyPlayer({ snapshot, photo, audio, footer, recheckAudio }: {
     return src;
   };
   const { locale } = snapshot;
-  const s = FAMILY[isUiLocale(locale) ? locale : 'en'];
+  const s = FAMILY[locale];
   if (!url) return <p role="status">{s.wait}</p>;
   return <div lang={locale}><GuidePlayer family title={snapshot.title} subtitle={snapshot.nickname}
     badge={snapshot.demo ? { tone: 'demo', text: s.demo } : undefined} before={snapshot.before}

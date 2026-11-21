@@ -81,7 +81,7 @@ describe('Player flow', () => {
     render(<App />);
     await user.click(screen.getByRole('button', { name: /I see it/ }));
     await user.click(screen.getByRole('button', { name: /I see it/ }));
-    await user.click(screen.getByRole('button', { name: 'മലയാളം' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'App language' }), 'ml');
     expect(stepHeading().textContent).toBe('ഘട്ടം 3 / 4');
     expect(document.documentElement.lang).toBe('ml');
     expect(window.location.search).toContain('guide=practice-hdmi');

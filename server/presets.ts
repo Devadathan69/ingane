@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isUiLocale } from '../shared/languages';
+import { isAuthoredLocale } from '../shared/languages';
 import { catalogEntries, presetText, stepsFor } from '../src/data/presets/catalog';
 import { presetRegistry } from '../src/data/presets/registry';
 import { REGISTRY_VERSION } from '../src/data/presets/types';
@@ -17,7 +17,7 @@ const collections = {
 /** Resolve only an authored step on the selected route. User text never enters preset speech. */
 export function presetNarration(input: unknown, locale: GuideLocale): string | undefined {
   const parsed = selector.safeParse(input);
-  if (!parsed.success || !isUiLocale(locale)) return undefined;
+  if (!parsed.success || !isAuthoredLocale(locale)) return undefined;
   const { scope, guideId, port, stepId } = parsed.data;
   for (const entry of collections[scope]) {
     const guide = entry.guides.find(g => g.id === guideId);

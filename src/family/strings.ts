@@ -1,3 +1,7 @@
+import hi from '../locales/hi/family';
+import ta from '../locales/ta/family';
+import kn from '../locales/kn/family';
+import te from '../locales/te/family';
 import type { Locale } from '../data/types';
 const en = {
   drafts: 'My drafts', details: 'Guide details', steps: 'Guide steps',
@@ -51,7 +55,9 @@ const en = {
     control: 'Name and place the button mark inside the photo.', secret: 'Remove passwords or other credentials before saving.',
     contact: 'Remove phone numbers and email addresses. You can use a nickname.' },
 };
-const ml: typeof en = {
+export type FamilyStrings = typeof en;
+
+const ml: FamilyStrings = {
   drafts:'എന്റെ കരടുകൾ', details:'ഗൈഡിന്റെ വിവരങ്ങൾ', steps:'ഗൈഡിലെ ഘട്ടങ്ങൾ',
   hub:'എന്റെ കുടുംബ ഗൈഡുകൾ',create:'കുടുംബത്തിനായി പകർപ്പ് ഉണ്ടാക്കുക',manual:'സ്വന്തം റിമോട്ടിന്റെ ഫോട്ടോയോടെ തുടങ്ങുക',fromPreset:'തയ്യാറായ ഗൈഡിൽ നിന്ന് തുടങ്ങുക',
   newTitle:'കുടുംബ ഗൈഡ് തിരുത്തുക',review:'സൂക്ഷിക്കുന്നതിന് മുമ്പ് ഘട്ടങ്ങളും ബട്ടൺ അടയാളങ്ങളും പരിശോധിക്കുക.',saved:'കരട് ഈ ഉപകരണത്തിൽ സൂക്ഷിച്ചു.',
@@ -103,4 +109,4 @@ const ml: typeof en = {
     control:'ഫോട്ടോയിൽ ബട്ടൺ അടയാളപ്പെടുത്തി പേര് നൽകുക.',secret:'സൂക്ഷിക്കുന്നതിന് മുമ്പ് പാസ്‌വേഡും സ്വകാര്യ കീകളും നീക്കുക.',
     contact:'ഫോൺ നമ്പറും ഇമെയിൽ വിലാസവും നീക്കുക. വിളിപ്പേര് ഉപയോഗിക്കാം.' },
 };
-export const FAMILY: Record<Locale, typeof en> = { en, ml };
+export const FAMILY: Record<Locale, typeof en> = { en, ml, hi, ta, kn, te };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BBox, ClarificationAnswers, GuideResult, ObservedControl } from '../../shared/guide';
 import type { Locale } from '../data';
-import { guideLanguages, languages, isUiLocale, type GuideLanguage } from '../../shared/languages';
+import { guideLanguages, languages, type GuideLanguage } from '../../shared/languages';
 import { PhotoInputs } from './PhotoInputs';
 import { GuidePlayer } from '../player/GuidePlayer';
 import { STRINGS } from '../i18n';
@@ -342,11 +342,11 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
           key={guideKey}
           title={result.task.summary || rg.title}
           subtitle={result.deviceCandidates[0]?.family ?? ''}
-          badge={result.demo ? { tone: 'demo', text: rg.demoBadge } : { tone: 'live', text: rg.liveBadge }}
+          badge={result.demo ? { tone: 'demo', text: GM_STRINGS[rl].demoBadge } : { tone: 'live', text: GM_STRINGS[rl].liveBadge }}
           steps={toPlayerSteps(result)}
-          image={{ src: photo.url, width: photo.width, height: photo.height, alt: rg.photoTitle, frameWidth: '100%' }}
+          image={{ src: photo.url, width: photo.width, height: photo.height, alt: GM_STRINGS[rl].photoTitle, frameWidth: '100%' }}
           locale={rl}
-          labels={isUiLocale(rl) ? { no: GM_STRINGS[rl].screenNo } : undefined}
+          labels={{ no: GM_STRINGS[rl].screenNo }}
           controls={result.observedControls.filter(c => c.display === 'box').map(c => c.bbox)}
           speak={health?.speech && !health.demo && languages[rl].tts ? (step) => speakUrl(rl, narrationById.get(step.id) ?? step.instruction, result.narrationTokens[step.id] ?? '') : undefined}
           mismatchExtra={(step) => (

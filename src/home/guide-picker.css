@@ -7,9 +7,9 @@
 .home-intro p, .home-intro h1 { margin: 0; }
 .home-kicker { color: #436156; font-size: 1rem; font-weight: 650; }
 .home-intro h1 { color: var(--ink); font-size: clamp(1.8rem, 8.1vw, 3.15rem); line-height: 1.2; letter-spacing: -.045em; }
-.home-intro h1:lang(ml) { font-size: clamp(1.65rem, 7.55vw, 2.85rem); font-weight: 720; letter-spacing: -.025em; line-height: 1.55; }
+.home-intro h1:is(:lang(ml), :lang(hi), :lang(ta), :lang(kn), :lang(te)) { font-size: clamp(1.65rem, 7.55vw, 2.85rem); font-weight: 720; letter-spacing: -.025em; line-height: 1.55; }
 .home-hint { color: #40584c; font-size: clamp(.95rem, 4vw, 1.13rem); }
-.home-hint:lang(ml) { font-size: clamp(.84rem, 3.76vw, 1.13rem); }
+.home-hint:is(:lang(ml), :lang(hi), :lang(ta), :lang(kn), :lang(te)) { font-size: clamp(.84rem, 3.76vw, 1.13rem); }
 
 .home-example {
   position: relative; isolation: isolate; overflow: hidden; container-type: inline-size;
@@ -78,14 +78,14 @@
 .picker .capture-primary { min-height: 51px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; text-align: left;
   border-color: transparent; background: #ffd56f; color: #1c3027; }
 .picker .capture-primary .ui-icon:last-child, .route-card > .ui-icon { width: 18px; }
-.picker .capture-actions .btn:lang(ml) { font-size: clamp(.85rem, 3.76vw, 1.09rem); gap: 10px; text-align: start; }
+.picker .capture-actions .btn:is(:lang(ml), :lang(hi), :lang(ta), :lang(kn), :lang(te)) { font-size: clamp(.85rem, 3.76vw, 1.09rem); gap: 10px; text-align: start; }
 .picker .capture-gallery { display: flex; justify-content: flex-start; background: transparent; color: #264b3c; border: 1px solid #d3dbcb; }
 .picker-nav { display: grid; gap: 7px; border-top: 1px solid #d9ded0; margin-top: 17px; padding-top: 10px; }
 .picker-nav h2 { color: var(--muted); font-size: 1rem; font-weight: 670; margin: 0 0 1px; }
 .route-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
   min-height: 50px; padding: 8px 20px 8px 10px; border-radius: 14px; text-decoration: none; color: #224738; background: #fbfaf4; }
 .route-card strong { font-size: clamp(1rem, 4vw, 1.14rem); font-weight: 650; }
-.route-card strong:lang(ml) { font-size: clamp(.9rem, 3.8vw, 1.12rem); }
+.route-card strong:is(:lang(ml), :lang(hi), :lang(ta), :lang(kn), :lang(te)) { font-size: clamp(.9rem, 3.8vw, 1.12rem); }
 .route-card .icon-tile { width: 32px; height: 32px; border-radius: 10px; background: #e6eee2; }
 .route-card .icon-tile .ui-icon { width: 20px; height: 20px; }
 .practice-link { display: inline-flex; align-items: center; min-height: 48px; margin-top: 9px; color: #426459;
@@ -105,3 +105,5 @@
   .picker-nav h2 { grid-column: 1 / -1; }
   .route-card { min-height: 63px; padding: 12px 20px; }
 }
+.example-copy:lang(ta) strong, .example-copy:lang(kn) strong, .example-copy:lang(te) strong { font-size: 4.15cqw; }
+.example-copy span, .example-copy strong, .example-copy small { max-width: 47%; }

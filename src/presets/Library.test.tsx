@@ -26,7 +26,7 @@ describe('ready-made guide selection', () => {
     expect(screen.getByRole('button', { name: 'Take a photo of your remote' })).toBeTruthy();
     cleanup();
     mountApp();
-    expect(screen.getByText(/no device-verified guides yet/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^TCL/ }).getAttribute('href')).toBe('?flow=presets&brand=tcl&lang=en');
     expect(exists('Ingane Demo')).toBeNull();
     const search = screen.getByRole('searchbox');
     for (const code of ['QA55Q60DAULXL', 'BN59-01500G', 'DEMO-TV-01']) {

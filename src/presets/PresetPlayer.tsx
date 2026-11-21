@@ -1,3 +1,4 @@
+import { isAuthoredLocale, languages, type AuthoredLocale } from '../../shared/languages';
 import { useEffect, useRef, useState } from 'react';
 import { presetText, stepsFor } from '../data/presets/catalog';
 import { REGISTRY_VERSION, type CatalogEntry, type CatalogScope, type TaskGuide } from '../data/presets/types';
@@ -13,7 +14,7 @@ interface Props {
   guide: TaskGuide;
   scope: CatalogScope;
   port: string | null;
-  locale: Locale;
+  locale: AuthoredLocale;
   appLocale?: Locale;
   onFamily?: () => void;
   onRecheck: () => void;
@@ -21,8 +22,9 @@ interface Props {
 }
 
 export function PresetPlayer({ entry, guide, scope, port, locale, appLocale = locale, onFamily, onRecheck, onTasks }: Props) {
-  const s = PRESET_STRINGS[locale];
-  const t = STRINGS[locale];
+  const playerLocale = isAuthoredLocale(appLocale) ? locale : appLocale;
+  const s = PRESET_STRINGS[playerLocale];
+  const t = STRINGS[playerLocale];
   const { remote, tv } = entry;
   const [hasSpeech, setHasSpeech] = useState(false);
   const availability = useRef<ReturnType<typeof getHealth> | null>(null);
@@ -34,10 +36,10 @@ export function PresetPlayer({ entry, guide, scope, port, locale, appLocale = lo
   }, []);
   const steps = stepsFor(guide, port);
   if (!steps?.length) return <main className="flow"><p role="alert">{s.noResults}</p><PhotoLink locale={appLocale} /></main>;
-  return <div lang={locale}><StepPlayer
+  return <div lang={playerLocale}><StepPlayer
     title={presetText(guide.playTitle ?? guide.title, locale, port)}
-    subtitle={[tv.modelCode, remote.partNumber, guide.playTitle ? null : port].filter(Boolean).join(' · ')}
-    subtitleInDetails
+    subtitle={[locale !== playerLocale && `${s.language} · ${languages[locale].native}`, tv.modelCode, remote.partNumber, guide.playTitle ? null : port].filter(Boolean).join(' · ')}
+    subtitleInDetails={locale === playerLocale}
     badge={scope === 'demo' ? { tone: 'demo', text: s.demo, note: s.demoNote } :
       { tone: 'verified', text: t.verifiedBadge, note: guide.verifiedOn ?? undefined }}
     before={presetText(guide.startingState, locale, port)}
@@ -53,7 +55,7 @@ export function PresetPlayer({ entry, guide, scope, port, locale, appLocale = lo
       };
     })}
     image={{ ...remote.asset, alt: remote.asset.alt[locale], frameWidth: 'min(68%, 260px)' }}
-    locale={locale} t={t}
+    locale={locale} contentLocale={locale} t={t}
     controls={Object.values(remote.controls).map(c => c.hotspot)}
     speak={hasSpeech ? step => speakPresetUrl(locale, { version: REGISTRY_VERSION, scope, guideId: guide.id, stepId: step.id, port }) : undefined}
     mismatchExtra={() => <>

@@ -1,8 +1,8 @@
 export type { UiLocale as Locale } from '../../shared/languages';
-export { uiLanguages as LOCALES } from '../../shared/languages';
-import type { UiLocale as Locale } from '../../shared/languages';
+export { authoredLocales as LOCALES } from '../../shared/languages';
+import type { AuthoredLocale } from '../../shared/languages';
 
-export type LocalizedText = Record<Locale, string>;
+export type LocalizedText = Record<AuthoredLocale, string>;
 
 /** Normalized rectangle on the final, oriented device image. All values in [0,1]. */
 export interface Hotspot {
@@ -31,7 +31,7 @@ export interface GuideStep {
   instruction: LocalizedText;
   expected: LocalizedText;
   recovery: LocalizedText;
-  audio?: Partial<Record<Locale, string>>;
+  audio?: Partial<Record<AuthoredLocale, string>>;
 }
 
 /**

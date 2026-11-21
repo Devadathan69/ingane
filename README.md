@@ -26,9 +26,15 @@ To help with a different remote, take a picture or choose one from the gallery. 
 
 ## Languages and coverage
 
-The interface and authored practice guides support **Malayalam and English**. Photo guides, family guides and speech also support **Hindi, Tamil, Kannada and Telugu**. Guide language is independent of interface language. Printed labels such as **SOURCE** and **HDMI 2** stay visible.
+The home screen, brand guides, photo flow and family editor are available in **Malayalam, English, Hindi, Tamil, Kannada and Telugu**. Choose a language from the menu at the top. Photo and family guides can use a different language from the interface. The two photographed practice walkthroughs have authored steps and narration in Malayalam and English. Printed labels such as **SOURCE** and **HDMI 2** stay visible.
 
-The public practice library has one photographed remote and two authored tasks, **Switch to HDMI** and **Restore muted sound**. Its example menu is opt-in. There are currently **zero device-verified TV presets**. Publishing a real preset requires a rights-cleared, front-on photo, a match to the exact TV model and remote part number, and a physical check of each button, starting screen and menu outcome on the stated firmware. The user presses every button on their own TV.
+Choose a brand tile on the home screen or in **Ready-made guides** to read instructions for Samsung, LG, Sony, TCL, Hisense or Xiaomi. Each article names its applicable model or menu where relevant and links to the manufacturer. For example, the TCL tile opens instructions for switching to HDMI and checking missing sound. If the labels differ, choose **Use my remote photo**. [Open TCL guides](https://ingane.vercel.app/?flow=presets&brand=tcl&lang=en)
+
+| Browse by TV brand in Hindi | Read a TCL guide in Tamil |
+| :---: | :---: |
+| <img src="docs/media/brands-hi.png" alt="Hindi library with six TV brand tiles" width="230"> | <img src="docs/media/tcl-ta.png" alt="Tamil instructions for choosing the matching HDMI input on TCL" width="230"> |
+
+The separate practice collection has one photographed remote and two authored tasks, **Switch to HDMI** and **Restore muted sound**. Its example menu is opt-in. There are currently **zero device-verified TV presets**. Publishing a real preset requires a rights-cleared, front-on photo, a match to the exact TV model and remote part number, and a physical check of each button, starting screen and menu outcome on the stated firmware. The user presses every button on their own TV.
 
 ## Run locally
 
@@ -115,6 +121,7 @@ For the mobile photo, preset and player suites, generate the licensed test fixtu
 node scripts/e2e-check.mjs http://127.0.0.1:8787/
 node scripts/e2e-v2.mjs http://127.0.0.1:8787/
 npm run e2e:v3 -- http://127.0.0.1:8787/
+npm run e2e:library -- http://127.0.0.1:8787/
 npm run e2e:press -- http://127.0.0.1:8787/
 npm run e2e:v4
 ```

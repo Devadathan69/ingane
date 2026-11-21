@@ -1,3 +1,7 @@
+import hi from '../locales/hi/photo';
+import ta from '../locales/ta/photo';
+import kn from '../locales/kn/photo';
+import te from '../locales/te/photo';
 import type { Locale } from '../data';
 
 const en = {
@@ -134,4 +138,4 @@ const ml: GuideMeStrings = {
   hdmiSupportNote: 'ഈ ടിവിയുടെ മെനു സ്ഥിരീകരിച്ചാലോ, ടിവി സ്ക്രീനിന്റെ ഫോട്ടോ ഉണ്ടെങ്കിലോ മാത്രമേ HDMI മാറ്റാൻ പറഞ്ഞുതരാനാകൂ.',
 };
 
-export const GM_STRINGS: Record<Locale, GuideMeStrings> = { en, ml };
+export const GM_STRINGS: Record<Locale, GuideMeStrings> = { en, ml, hi, ta, kn, te };

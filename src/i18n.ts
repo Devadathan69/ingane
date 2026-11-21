@@ -1,10 +1,13 @@
+import hi from './locales/hi/interface';
+import ta from './locales/ta/interface';
+import kn from './locales/kn/interface';
+import te from './locales/te/interface';
 import type { Locale } from './data';
 
 const en = {
   appName: 'Ingane',
+  photoCredit: 'Practice photo credit',
   tagline: 'See what to press on your own remote',
-  switchTo: 'മലയാളം',
-  switchToLang: 'ml' as Locale,
   stepOf: (n: number, t: number) => `Step ${n} of ${t}`,
   press: 'Press',
   remoteView: 'Remote photo',
@@ -60,9 +63,8 @@ export type Strings = typeof en;
 
 const ml: Strings = {
   appName: 'ഇങ്ങനെ',
+  photoCredit: 'പരിശീലന ഫോട്ടോയുടെ കടപ്പാട്',
   tagline: 'ഏത് ബട്ടൺ അമർത്തണമെന്ന് കാണാം.',
-  switchTo: 'English',
-  switchToLang: 'en',
   stepOf: (n, t) => `ഘട്ടം ${n} / ${t}`,
   press: 'അമർത്തേണ്ടത്',
   remoteView: 'റിമോട്ടിന്റെ ഫോട്ടോ',
@@ -114,4 +116,4 @@ const ml: Strings = {
   guideMeBody: 'ഫോട്ടോ എടുത്ത് വേണ്ടത് പറയൂ.',
 };
 
-export const STRINGS: Record<Locale, Strings> = { en, ml };
+export const STRINGS: Record<Locale, Strings> = { en, ml, hi, ta, kn, te };

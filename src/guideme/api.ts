@@ -1,5 +1,5 @@
 import type { ClarificationAnswers, GuideResult } from '../../shared/guide';
-import { isUiLocale, type UiLocale, type GuideLanguage as Locale } from '../../shared/languages';
+import { type UiLocale, type GuideLanguage as Locale } from '../../shared/languages';
 import type { PresetNarration } from '../data/presets/types';
 
 export class ApiError extends Error {
@@ -10,11 +10,15 @@ export class ApiError extends Error {
 
 const FALLBACK: Record<UiLocale, string> = {
   en: 'Could not reach the guide service. Check your connection and try again.',
+  hi: 'गाइड सेवा से संपर्क नहीं हुआ। इंटरनेट कनेक्शन जाँचकर फिर कोशिश करें।',
+  ta: 'வழிகாட்டி சேவையை அணுக முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயலவும்.',
+  kn: 'ಮಾರ್ಗದರ್ಶಿ ಸೇವೆಯನ್ನು ಸಂಪರ್ಕಿಸಲಾಗಲಿಲ್ಲ. ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+  te: 'గైడ్ సేవను చేరుకోలేకపోయాం. ఇంటర్నెట్ కనెక్షన్ చూసుకుని మళ్లీ ప్రయత్నించండి.',
   ml: 'ഗൈഡ് സേവനവുമായി ബന്ധപ്പെടാനായില്ല. കണക്ഷൻ നോക്കി വീണ്ടും ശ്രമിക്കുക.',
 };
 
 async function send(url: string, init: RequestInit, locale: Locale, appLocale?: UiLocale): Promise<Response> {
-  const ui = appLocale ?? (isUiLocale(locale) ? locale : 'en');
+  const ui = appLocale ?? locale;
   const fallback = FALLBACK[ui];
   const headers = new Headers(init.headers);
   headers.set('Accept-Language', ui);

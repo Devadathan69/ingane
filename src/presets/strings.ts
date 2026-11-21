@@ -1,9 +1,14 @@
+import hi from '../locales/hi/presets';
+import ta from '../locales/ta/presets';
+import kn from '../locales/kn/presets';
+import te from '../locales/te/presets';
 import type { Locale } from '../data/types';
 
 const en = {
   title: 'Ready-made guides',
-  entry: 'Choose your TV and remote for a step-by-step guide.',
-  search: 'Search by TV model, remote part number or task',
+  entry: 'Choose your TV brand to see its guides.',
+  available: 'Available for this guide',
+  search: 'Search by brand, TV model, remote part number or task',
   brand: 'Choose a brand',
   model: 'Choose your TV model',
   modelSearch: 'Enter the exact model code',
@@ -39,11 +44,14 @@ const en = {
   layoutPhotoNeeded: 'The photo could not load. This part number has several layouts. Use your remote photo to continue.',
 };
 
-const ml: typeof en = {
+export type PresetStrings = typeof en;
+
+const ml: PresetStrings = {
+  available: 'ഈ ഗൈഡിന്റെ ഭാഷകൾ',
   hdmiDemo: 'HDMI 2 ഡെമോ കാണുക',
   title: 'തയ്യാറായ ഗൈഡുകൾ',
-  entry: 'ടിവിയും റിമോട്ടും തിരഞ്ഞെടുക്കൂ.',
-  search: 'ടിവി മോഡൽ, റിമോട്ടിന്റെ പാർട്ട് നമ്പർ, അല്ലെങ്കിൽ ചെയ്യേണ്ട കാര്യം തിരയുക',
+  entry: 'ഗൈഡുകൾ കാണാൻ നിങ്ങളുടെ ടിവിയുടെ ബ്രാൻഡ് തിരഞ്ഞെടുക്കുക.',
+  search: 'ബ്രാൻഡ്, ടിവി മോഡൽ, റിമോട്ടിന്റെ പാർട്ട് നമ്പർ, അല്ലെങ്കിൽ ചെയ്യേണ്ട കാര്യം തിരയുക',
   brand: 'ബ്രാൻഡ് തിരഞ്ഞെടുക്കുക',
   model: 'നിങ്ങളുടെ ടിവി മോഡൽ തിരഞ്ഞെടുക്കുക',
   modelSearch: 'പൂർണ്ണ മോഡൽ കോഡ് നൽകുക',
@@ -78,4 +86,4 @@ const ml: typeof en = {
   layoutPhotoNeeded: 'ഫോട്ടോ ലഭ്യമല്ല. ഈ പാർട്ട് നമ്പറിൽ പല ബട്ടൺ ക്രമങ്ങളുണ്ട്. തുടരാൻ നിങ്ങളുടെ റിമോട്ടിന്റെ ഫോട്ടോ ഉപയോഗിക്കുക.',
 };
 
-export const PRESET_STRINGS: Record<Locale, typeof en> = { en, ml };
+export const PRESET_STRINGS: Record<Locale, typeof en> = { en, ml, hi, ta, kn, te };

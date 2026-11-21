@@ -67,7 +67,7 @@ try {
     await page.route('**/api/health', r => r.fulfill({ json: { ok: true, guide: true, speech: true, demo: false } }));
     await page.goto(`${base}?lang=en`);
     await page.getByRole('link', { name: 'Ready-made guides' }).click();
-    await page.getByText(/no device-verified guides yet/).waitFor();
+    await page.getByRole('link', { name: /^TCL/ }).waitFor();
     await checkLayout(page);
     await button('Try the demo').click();
     await button('Ingane Demo').click();

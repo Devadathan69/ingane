@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { GUIDES, DEVICES, LOCALES, lookupGuide, type Locale } from './data';
-import { languages, uiLanguages } from '../shared/languages';
+import { GUIDES, DEVICES, lookupGuide, type Locale } from './data';
+import { authoredLocale, isUiLocale, languages, uiLanguages } from '../shared/languages';
 import { STRINGS } from './i18n';
 import { GuideMe } from './guideme/GuideMe';
 import { Player } from './player/Player';
@@ -22,10 +22,10 @@ function readParams() {
 
 function initialLocale(): Locale {
   const fromUrl = readParams().lang;
-  if (fromUrl && (LOCALES as string[]).includes(fromUrl)) return fromUrl as Locale;
+  if (fromUrl && isUiLocale(fromUrl)) return fromUrl;
   try {
     const saved = window.localStorage.getItem(LANG_KEY);
-    if (saved && (LOCALES as string[]).includes(saved)) return saved as Locale;
+    if (saved && isUiLocale(saved)) return saved;
   } catch {
     /* storage unavailable: fall through to default */
   }
@@ -59,6 +59,7 @@ export function App() {
     const onPop = () => {
       setEntryPhoto(undefined);
       setSeed(null);
+      setLocale(initialLocale());
       setGuideId(readParams().guide);
       setFlow(readParams().flow);
     };
@@ -93,17 +94,10 @@ export function App() {
           <img className="brand-symbol" src="ingane.svg" width="40" height="40" alt="" />
           <span className="brand-word" lang="ml">ഇങ്ങനെ</span>
         </a>
-        {!guideId && flow !== 'family-view' ? <select className="lang-toggle" aria-label={t.interfaceLanguage} value={locale}
+        {flow !== 'family-view' && <select className="lang-toggle" aria-label={t.interfaceLanguage} value={locale}
           onChange={e => changeLocale(e.target.value as Locale)}>
           {uiLanguages.map(l => <option key={l} value={l} lang={l}>{languages[l].native}</option>)}
-        </select> : flow !== 'family-view' && <button
-          type="button"
-          className="lang-toggle"
-          lang={t.switchToLang}
-          onClick={() => changeLocale(t.switchToLang)}
-        >
-          {t.switchTo}
-        </button>}
+        </select>}
       </header>
 
       {flow === 'family-view' ? (
@@ -111,7 +105,7 @@ export function App() {
       ) : flow === 'remote' && !guideId ? (
         <GuideMe locale={locale} initialFile={entryPhoto} onFamily={createFamily} />
       ) : flow === 'presets' && !guideId ? (
-        <Library locale={locale} onFamily={createFamily}
+        <Library locale={locale} onFamily={createFamily} brandId={new URLSearchParams(window.location.search).get('brand')}
           demoHdmi2={new URLSearchParams(window.location.search).get('demo') === 'hdmi-2'} />
       ) : flow === 'family' && !guideId ? (
         <Suspense fallback={<p role="status">{FAMILY[locale].wait}</p>}><FamilyGuides locale={locale} seed={seed} /></Suspense>
@@ -139,7 +133,7 @@ export function App() {
         </main>
       )}
       {hasPhotoCredit && !home && <footer className="photo-credit">
-        <a href="./photo-credit.txt">{locale === 'ml' ? 'പരിശീലന ഫോട്ടോയുടെ കടപ്പാട്' : 'Practice photo credit'}</a>
+        <a href="./photo-credit.txt">{t.photoCredit}</a>
       </footer>}
     </div>
   );
@@ -151,8 +145,8 @@ function GuideList({ locale }: { locale: Locale }) {
       {Object.values(GUIDES).map((g) => (
         <li key={g.id}>
           <a className="guide-link" href={`?guide=${encodeURIComponent(g.id)}&lang=${locale}`}>
-            <span className="guide-link-title">{g.title[locale]}</span>
-            <span className="guide-link-device">{DEVICES[g.deviceId]?.name[locale]}</span>
+            <span className="guide-link-title">{g.title[authoredLocale(locale)]}</span>
+            <span className="guide-link-device">{DEVICES[g.deviceId]?.name[authoredLocale(locale)]}</span>
             {g.verification !== 'verified' && (
               <span className="guide-link-badge">{STRINGS[locale].sampleBadge}</span>
             )}

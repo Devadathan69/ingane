@@ -1,0 +1,55 @@
+.brand-tiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .6rem;
+}
+.brand-tile {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: .65rem;
+  min-height: 91px;
+  height: 100%;
+  padding: .8rem 1rem;
+  border: 1px solid #cbd7c9;
+  border-radius: 14px;
+  background: #edf1e7;
+  color: var(--ink);
+  text-decoration: none;
+}
+.brand-tile strong { font: 700 1.2rem/1.35 system-ui, sans-serif; }
+.brand-tile-count { color: var(--muted); padding-inline-end: 1rem; font-size: .85rem; }
+.brand-tile > .ui-icon { position: absolute; inset: auto .7rem .75rem auto; width: 17px; height: 17px; }
+.brand-tiles.compact .brand-tile { min-height: 48px; display: flex; align-items: center; padding: .6rem .85rem; background: var(--card); }
+.brand-tiles.compact strong { font-size: 1rem; }
+.brand-tiles.compact .ui-icon { position: static; margin-inline-start: auto; }
+.picker-brands { margin-top: 1rem; }
+.picker-brands h2 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 650; color: var(--muted); }
+.brand-resource-list { display: grid; gap: .65rem; }
+.brand-resource-list header p { margin: .25rem 0 .35rem; color: var(--muted); }
+.brand-resource { border: 1px solid var(--line); border-radius: 14px; }
+.brand-resource[open] { border-color: var(--edge); }
+.brand-resource summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto 1fr auto; gap: .75rem; align-items: center; padding: .85rem; line-height: 1.55; min-height: 60px; border-radius: inherit; }
+.brand-resource summary::-webkit-details-marker { display: none; }
+.brand-resource summary .icon-tile { width: 36px; height: 36px; border-radius: 10px; }
+.brand-resource summary small { display: block; color: var(--muted); }
+.resource-chevron { width: .55rem; height: .55rem; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); margin: 0 .25rem .25rem 0; }
+.brand-resource[open] .resource-chevron { transform: rotate(225deg); }
+.brand-resource-body { padding: 0 1rem .5rem; }
+.brand-resource-body ol { margin: .15rem 0; padding-inline-start: 1.5rem; }
+.brand-resource-body li { padding: .3rem 0 .3rem .15rem; }
+.brand-resource-body li::marker { color: var(--gold-ink); font-weight: 650; }
+.manufacturer-source { display: inline-flex; align-items: center; gap: .4rem; min-height: 48px; color: var(--brand); text-underline-offset: .18em; }
+.manufacturer-source .ui-icon { width: 15px; height: 15px; }
+@media (hover: hover) {
+  .brand-tile:hover, .compact .brand-tile:hover, .brand-resource summary:hover { background: #dfe9da; }
+}
+@media (min-width: 540px) {
+  .brand-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 800px) {
+  .brand-tiles.compact { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

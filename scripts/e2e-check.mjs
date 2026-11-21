@@ -68,7 +68,7 @@ for (const width of [360, 430]) {
   check('mismatch stays on step 2', (await page.locator('h2').textContent()) === 'ഘട്ടം 2 / 4');
   check('mismatch hides advance control', (await page.getByRole('button', { name: 'ഇങ്ങനെ തന്നെ' }).count()) === 0);
 
-  await page.getByRole('button', { name: 'English' }).click();
+  await page.locator('select.lang-toggle').selectOption('en');
   check('language toggle keeps step + recovery', (await page.locator('h2').textContent()) === 'Step 2 of 4' && (await page.locator('.recovery').isVisible()));
   check('html lang updated', (await page.getAttribute('html', 'lang')) === 'en');
 

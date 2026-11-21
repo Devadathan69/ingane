@@ -1,4 +1,5 @@
-import type { Locale, LocalizedText } from '../types';
+import type { LocalizedText } from '../types';
+import type { AuthoredLocale } from '../../../shared/languages';
 import type { CatalogEntry, CatalogScope, PresetRegistry, PresetStep, TaskGuide } from './types';
 import { validatePresetRegistry } from './validate';
 
@@ -24,7 +25,7 @@ export function stepsFor(guide: TaskGuide, port: string | null): PresetStep[] | 
   return guide.input.routes[port].map(id => guide.steps.find(s => s.id === id)!);
 }
 
-export function presetText(copy: LocalizedText, locale: Locale, port: string | null) {
+export function presetText(copy: LocalizedText, locale: AuthoredLocale, port: string | null) {
   return copy[locale].replaceAll('{port}', port ?? '');
 }
 

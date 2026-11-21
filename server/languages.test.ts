@@ -4,6 +4,7 @@ import { LOCALE, type GuideResult } from '../shared/guide';
 import { guideLanguages, languages, uiLanguages } from '../shared/languages';
 import { createApp } from './app';
 import { loadConfig } from './config';
+import { REGISTRY_VERSION } from '../src/data/presets/types';
 import { presetNarration } from './presets';
 import { silentWav } from './providers/mock';
 import { fakeImage } from './test-helpers';
@@ -18,7 +19,7 @@ const commands = [
 
 describe('guide and speech languages', () => {
   it('offers only reviewed UI languages and keeps the next speech wave out of authoring', () => {
-    expect(uiLanguages).toEqual(['ml','en']);
+    expect(uiLanguages).toEqual(['ml','en','hi','ta','kn','te']);
     expect(guideLanguages).toEqual(['ml','en','hi','ta','kn','te']);
     for (const l of ['bn','mr','gu','pa','od'] as const) {
       expect(languages[l].code).toBe(l + '-IN');
@@ -32,6 +33,14 @@ describe('guide and speech languages', () => {
     const res = await app.request('/api/guide', {method:'POST',body:form,headers:{'Accept-Language':'ml'}});
     expect(res.status).toBe(400);
     expect((await res.json()).message).toMatch(/\p{Script=Malayalam}/u);
+  });
+  it.each(commands)('returns %s consent errors in the selected interface language', async (locale, _request, script) => {
+    const app = createApp({ config: loadConfig({ INGANE_PROVIDER: 'mock' }) });
+    const form = new FormData();
+    form.set('locale', 'en');
+    const res = await app.request('/api/guide', { method: 'POST', body: form, headers: { 'Accept-Language': locale } });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(script);
   });
   it.each(commands)('keeps a grounded HDMI 2 visual step, the exact label and native script in %s', async (l, request, script) => {
     const app = createApp({ config: loadConfig({ INGANE_PROVIDER: 'mock' }) });
@@ -52,7 +61,7 @@ describe('guide and speech languages', () => {
     }
     result.steps[0].instruction = 'Choose HDMI 2.';
     expect(validateGuideResult(result,{screenLabels:['HDMI 2']}).join()).toContain(languages[l].name + ' script');
-    expect(presetNarration({version:1,scope:'demo',guideId:'demo-hdmi',stepId:'open-inputs',port:'HDMI 2'},l)).toBeUndefined();
+    expect(presetNarration({version:REGISTRY_VERSION,scope:'demo',guideId:'demo-hdmi',stepId:'open-inputs',port:'HDMI 2'},l)).toBeUndefined();
   });
   it.each(commands)('uses the official speech SDK wire formats and the chosen voice locale for %s', async (l, command) => {
     const transport=vi.spyOn(globalThis,'fetch').mockImplementation(async (url,init) => {
