@@ -1,5 +1,6 @@
 import type { ClarificationAnswers, GuideResult } from '../../shared/guide';
 import { type UiLocale, type GuideLanguage as Locale } from '../../shared/languages';
+import { GM_STRINGS } from './strings';
 import type { PresetNarration } from '../data/presets/types';
 
 export class ApiError extends Error {
@@ -58,6 +59,25 @@ export async function getHealth(): Promise<Health | null> {
   }
 }
 
+function fitsHdmiStage(result: GuideResult, answers: ClarificationAnswers): boolean {
+  if (result.task.type !== 'switch_hdmi' || result.status === 'unsupported') return result.status !== 'hdmi_checkpoint';
+  const next = result.hdmi;
+  if (!next || (answers.hdmi?.listVisible && next.stage !== 'select_input')) return false;
+  if (next.stage === 'resolve_source') {
+    return result.status === 'needs_clarification' && result.steps.length === 0 &&
+      ['confirm_button', 'mark_source', 'clearer_photo'].includes(result.clarification?.kind ?? '');
+  }
+  if (next.stage === 'await_input_list') {
+    const step = result.steps[0];
+    return result.status === 'hdmi_checkpoint' && result.steps.length === 1 && step.id === 'open-input-list' &&
+      result.observedControls.some(c => c.id === step.controlId && c.role === 'input' && c.display === 'box' && c.confidence === 'high');
+  }
+  if (answers.hdmi?.photoId !== next.photoId || answers.hdmi.listVisible !== true) return false;
+  if (result.status === 'needs_clarification') return result.steps.length === 0 && ['input_list', 'choose_input'].includes(result.clarification?.kind ?? '');
+  return result.status === 'ready' && result.steps.at(-1)?.id === 'select-input' &&
+    result.steps.every(s => !!s.screenLabel && next.labels.includes(s.screenLabel) && s.id !== 'open-input-list');
+}
+
 export async function requestGuide(
   args: { image: Blob; screenImage?: Blob; request: string; locale: Locale; appLocale?: UiLocale; answers: ClarificationAnswers },
   signal?: AbortSignal,
@@ -70,7 +90,12 @@ export async function requestGuide(
   fd.set('image', args.image, 'remote.jpg');
   if (args.screenImage) fd.set('screenImage', args.screenImage, 'screen.jpg');
   const res = await send('api/guide', { method: 'POST', body: fd, signal }, args.locale, args.appLocale);
-  return (await res.json()) as GuideResult;
+  const result = await res.json() as GuideResult;
+  if (!fitsHdmiStage(result, args.answers)) {
+    const copy = GM_STRINGS[args.appLocale ?? args.locale];
+    throw new ApiError('malformed', copy.errorTitle + '. ' + copy.tryAgain + '.');
+  }
+  return result;
 }
 
 export async function transcribe(audio: Blob, locale: Locale, signal?: AbortSignal, appLocale?: UiLocale): Promise<string> {

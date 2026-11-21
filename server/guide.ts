@@ -9,10 +9,12 @@ import {
   type GuideResult,
   type ObservedControl,
 } from '../shared/guide';
+import { buildHdmi, isMenuOpener } from './hdmi';
+import { HDMI_COPY } from '../shared/hdmi-copy';
 import { MESSAGES } from './messages';
 import { approvedReferences, findReference, referenceApplies } from './references';
 import { ProviderError, type GuideProviders, type NormalizedImage, type PlannerOutput, type RemoteObservation, type ScreenObservation } from './providers/types';
-import { validateGuideResult } from './validate';
+import { validateGuideResult, type ValidationContext } from './validate';
 
 const DPAD: ControlRole[] = ['nav_ring', 'ok', 'up', 'down', 'left', 'right'];
 const OVERLAP_LIMIT = 0.35;
@@ -44,7 +46,7 @@ export function verifyNarrationToken(secret: string, locale: GuideLocale, text: 
 
 export interface BuildInput {
   image: NormalizedImage;
-  screenImage?: NormalizedImage;
+  screenImage?: NormalizedImage | (() => Promise<NormalizedImage>);
   request: string;
   locale: GuideLocale;
   answers: ClarificationAnswers;
@@ -98,6 +100,9 @@ export function needsConfirmation(c: ObservedControl, all: ObservedControl[], an
 export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<GuideResult> {
   const { locale, answers } = input;
   const msg = MESSAGES[locale];
+  const screenImage = input.screenImage;
+  const readScreen = screenImage ? async () => deps.providers.analyzeScreen(
+    typeof screenImage === 'function' ? await screenImage() : screenImage, deps.signal) : undefined;
   const task = input.request.trim();
   const imageHash = createHash('sha256').update(input.image.bytes).digest('hex');
   const taskHash = createHash('sha256').update(task).digest('hex');
@@ -121,16 +126,47 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
     ...base, status: 'needs_clarification', task, evidenceRefs: [], steps: [], clarification: { kind, question, controlId }, unsupportedReason: null,
   });
 
-  if (!obs.isRemote) return clarify('clearer_photo', msg.notRemote);
-  const userHelped = !!(answers.userControls?.length || answers.confirmedControlIds?.length);
-  if ((obs.photoQuality === 'blurry' || obs.photoQuality === 'too_dark') && !userHelped) return clarify('clearer_photo', msg.clearerPhoto);
+  const poor = obs.photoQuality === 'blurry' || obs.photoQuality === 'too_dark';
+  const photoIssue = (issue: 'not_remote' | 'blurry' | 'too_dark', question: string) => {
+    const result = clarify('clearer_photo', question);
+    result.clarification!.photoIssue = issue;
+    return result;
+  };
+  if (!obs.isRemote) return photoIssue('not_remote', msg.notRemote);
+  const poorPhoto = () => obs.photoQuality === 'too_dark'
+    ? photoIssue('too_dark', HDMI_COPY[locale].dark) : photoIssue('blurry', HDMI_COPY[locale].blur);
+  const observed = toControls(obs, {});
+  if (poor && !observed.some(c => c.confidence !== 'low' || isMenuOpener(c))) return poorPhoto();
 
-  let screen: ScreenObservation | null = null;
-  if (input.screenImage) {
-    screen = await deps.providers.analyzeScreen(input.screenImage, deps.signal);
-    if (!screen.isTvScreen) screen = null;
-  }
-  const screenLabels = (screen?.labels ?? []).map((l) => l.trim()).filter(Boolean).slice(0, 30);
+  const photoId = createHmac('sha256', deps.secret).update(key + ':' + locale).digest('hex');
+  const hdmi = () => {
+    const bound = answers.hdmi?.photoId === photoId ? answers : {};
+    // Only the explicit confirmation action can introduce a manual Source box.
+    const layoutId = createHash('sha256').update(JSON.stringify(observed)).digest('hex');
+    const sameLayout = bound.hdmi?.layoutId === layoutId;
+    const sourceIds = observed.filter(c => c.role === 'input').map(c => c.id);
+    const confirmed = (bound.confirmedControlIds ?? []).filter(id => (sameLayout && sourceIds.includes(id)) ||
+      (bound.userControls?.some(mark => id === 'user_' + mark.id) && !observed.some(c => c.id === id)));
+    const checked: ClarificationAnswers = { ...bound, confirmedControlIds: confirmed,
+      rejectedControlIds: sameLayout ? bound.rejectedControlIds?.filter(id => sourceIds.includes(id)) : [],
+      userControls: bound.userControls?.filter(mark => mark.role === 'input' && confirmed.includes('user_' + mark.id) &&
+        !observed.some(c => c.role !== 'input' && c.confidence === 'high' && overlapRatio(c.bbox, mark.bbox) > OVERLAP_LIMIT)) };
+    const grounded = toControls(obs, checked);
+    const finish = (result: GuideResult, context: ValidationContext) => {
+      result.narrationTokens = Object.fromEntries(result.steps.map(s => [s.id, narrationToken(deps.secret, locale, s.narration)]));
+      const errors = validateGuideResult(result, context);
+      if (errors.length) throw new ProviderError('malformed', errors.join(', '));
+      return result;
+    };
+    return buildHdmi({ base: { ...base, observedControls: grounded }, request: task, photoId, layoutId, answers: checked,
+      needsCheck: c => needsConfirmation(c, grounded, checked) || (c.role === 'input' && !confirmed.includes(c.id) &&
+        grounded.some(other => other.id !== c.id && overlapRatio(c.bbox, other.bbox) > 0)),
+      readScreen, finish });
+  };
+  if (answers.hdmi?.photoId === photoId) return hdmi();
+  const userHelped = !!(answers.userControls?.length || answers.confirmedControlIds?.length);
+
+  let screenLabels: string[] = [];
 
   const roles = new Set(controls.map((c) => c.role));
   const families = base.deviceCandidates.map((d) => d.family);
@@ -142,7 +178,7 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
     controls: controls.map(({ id, label, role, confidence }) => ({ id, label, role, confidence })),
     deviceCandidates: base.deviceCandidates,
     references: refs.map(({ id, title, kind, content }) => ({ id, title, kind, content })),
-    screen: screen ? { ...screen, labels: screenLabels } : null,
+    screen: null as ScreenObservation | null,
     tvModel: answers.tvModel,
     note: answers.note,
     mismatch: answers.mismatch,
@@ -168,10 +204,6 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
     });
     if (usedScreen) evidenceRefs.push({ id: 'screen-photo', title: 'Photo of the user’s TV screen', kind: 'screen' });
 
-    if (plan.taskType === 'switch_hdmi') {
-      const modelRef = evidenceRefs.some((r) => r.kind === 'model' && refs.some((a) => a.id === r.id));
-      if (!modelRef && !usedScreen) return clarify('screen_photo', msg.hdmiNeedsEvidence, null, task);
-    }
     // Planner may only cite references the server offered for this device and task.
     for (const r of evidenceRefs) {
       if (r.kind !== 'screen' && !refs.some((a) => a.id === r.id)) throw new ProviderError('malformed', `cited reference ${r.id} was not offered`);
@@ -197,7 +229,18 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
 
   let errors: string[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
-    const plan = await deps.providers.plan(attempt ? { ...plannerInput, repairErrors: errors } : plannerInput, deps.signal);
+    let plan = await deps.providers.plan(attempt ? { ...plannerInput, repairErrors: errors } : plannerInput, deps.signal);
+    if (plan.taskType === 'switch_hdmi') return hdmi();
+    if (poor && !userHelped) return poorPhoto();
+    if (!attempt && readScreen && !answers.hdmi) {
+      const screen = await readScreen();
+      if (screen.isTvScreen) {
+        screenLabels = screen.labels.map(l => l.trim()).filter(Boolean).slice(0, 30);
+        plannerInput.screen = { ...screen, labels: screenLabels };
+        plan = await deps.providers.plan(plannerInput, deps.signal);
+        if (plan.taskType === 'switch_hdmi') return hdmi();
+      }
+    }
     let result: GuideResult;
     try {
       result = assemble(plan);

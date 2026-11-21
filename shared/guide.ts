@@ -60,14 +60,25 @@ export type GuideStep = z.infer<typeof GuideStep>;
 
 export const CLARIFICATION_KINDS = ['tv_model', 'clearer_photo', 'screen_photo', 'confirm_button', 'text'] as const;
 export const Clarification = z.object({
-  kind: z.enum(CLARIFICATION_KINDS),
+  kind: z.enum([...CLARIFICATION_KINDS, 'mark_source', 'input_list', 'choose_input']),
+  photoIssue: z.enum(['not_remote', 'blurry', 'too_dark']).optional(),
   question: z.string().min(1).max(300),
   controlId: z.string().nullable(),
 });
 export type Clarification = z.infer<typeof Clarification>;
 
+const visibleLabels = z.array(z.string().trim().min(1).max(60)).max(30);
+const photoId = z.string().regex(/^[a-f0-9]{64}$/);
+/** Issued for this remote observation, request and language. Only an acknowledged list permits selection. */
+export const HdmiContinuation = z.object({
+  photoId,
+  layoutId: photoId,
+  stage: z.enum(['resolve_source', 'await_input_list', 'select_input']),
+  labels: visibleLabels,
+});
+
 export const GuideResult = z.object({
-  status: z.enum(['ready', 'needs_clarification', 'unsupported']),
+  status: z.enum(['ready', 'hdmi_checkpoint', 'needs_clarification', 'unsupported']),
   task: z.object({ type: TaskType, summary: z.string().max(200) }),
   locale: LOCALE,
   deviceCandidates: z.array(DeviceCandidate).max(5),
@@ -75,6 +86,7 @@ export const GuideResult = z.object({
   evidenceRefs: z.array(EvidenceRef).max(10),
   steps: z.array(GuideStep).max(12),
   clarification: Clarification.nullable(),
+  hdmi: HdmiContinuation.optional(),
   unsupportedReason: z.string().max(400).nullable(),
   /** HMAC tokens that let /api/speak narrate only server-issued step text. Keyed by step id. */
   narrationTokens: z.record(z.string(), z.string()),
@@ -87,6 +99,13 @@ export type GuideResult = z.infer<typeof GuideResult>;
 /** What the client sends back when answering a clarification. */
 export const ClarificationAnswers = z.object({
   tvModel: z.string().max(80).optional(),
+  hdmi: z.object({
+    photoId,
+    layoutId: photoId.optional(),
+    listVisible: z.boolean().optional(),
+    typedLabels: visibleLabels.optional(),
+    target: z.string().trim().min(1).max(60).optional(),
+  }).optional(),
   confirmedControlIds: z.array(z.string().max(40)).max(20).optional(),
   textOnlyControlIds: z.array(z.string().max(40)).max(20).optional(),
   /** The user said the proposed box is not that button: drop it entirely. */

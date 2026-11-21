@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { HDMI_COPY } from '../shared/hdmi-copy';
 import { ClarificationAnswers, LOCALE, type GuideLocale } from '../shared/guide';
 import type { ServerConfig } from './config';
 import { buildGuide, VisionCache, verifyNarrationToken } from './guide';
@@ -8,6 +9,10 @@ import { isUiLocale } from '../shared/languages';
 import { API_ERRORS } from './messages';
 import { ProviderError } from './providers/types';
 import { presetNarration } from './presets';
+
+class ScreenFileError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
 
 type Window = { count: number; reset: number };
 
@@ -50,10 +55,11 @@ export function createApp(opts: AppOptions) {
   const getIp = opts.getIp ?? ((c: Context) => (config.trustProxy ? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() : undefined) ?? 'local');
 
   const app = new Hono();
-  const fail = (c: Context, status: number, code: string, locale: GuideLocale) => {
+  const fail = (c: Context, status: number, code: string, locale: GuideLocale, media?: 'screen') => {
     const preferred = c.req.header('Accept-Language') ?? '';
     const ui = isUiLocale(preferred) ? preferred : isUiLocale(locale) ? locale : 'en';
-    return c.json({ error: code, message: API_ERRORS[code]?.[ui] ?? API_ERRORS.unavailable[ui] }, status as 400);
+    const message = media === 'screen' && code === 'image_dimensions' ? HDMI_COPY[ui].screenSize : API_ERRORS[code]?.[ui] ?? API_ERRORS.unavailable[ui];
+    return c.json({ error: media ? 'screen_' + code : code, message }, status as 400);
   };
 
   const providerFail = (c: Context, err: unknown, locale: GuideLocale) => {
@@ -116,12 +122,12 @@ export function createApp(opts: AppOptions) {
     if (!(form.image instanceof File)) return fail(c, 400, 'image_missing', locale);
     const img = checkImage(Buffer.from(await form.image.arrayBuffer()));
     if (!img.ok) return fail(c, 400, img.code, locale);
-    let screenImage;
-    if (form.screenImage instanceof File) {
-      const s = checkImage(Buffer.from(await form.screenImage.arrayBuffer()));
-      if (!s.ok) return fail(c, 400, s.code, locale);
-      screenImage = s.image;
-    }
+    const screenFile = form.screenImage;
+    const screenImage = screenFile instanceof File ? async () => {
+      const checked = checkImage(Buffer.from(await screenFile.arrayBuffer()));
+      if (!checked.ok) throw new ScreenFileError(checked.code);
+      return checked.image;
+    } : undefined;
 
     try {
       const result = await buildGuide(
@@ -130,6 +136,7 @@ export function createApp(opts: AppOptions) {
       );
       return c.json(result);
     } catch (err) {
+      if (err instanceof ScreenFileError) return fail(c, 400, err.code, locale, 'screen');
       return providerFail(c, err instanceof Error && err.name === 'TimeoutError' ? new ProviderError('timeout', 'request timeout') : err, locale);
     }
   });

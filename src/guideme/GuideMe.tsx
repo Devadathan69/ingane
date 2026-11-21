@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { BBox, ClarificationAnswers, GuideResult, ObservedControl } from '../../shared/guide';
 import type { Locale } from '../data';
 import { guideLanguages, languages, type GuideLanguage } from '../../shared/languages';
+import { HDMI_COPY, hdmiText } from '../../shared/hdmi-copy';
+import { InputList } from './InputList';
 import { PhotoInputs } from './PhotoInputs';
 import { GuidePlayer } from '../player/GuidePlayer';
 import { STRINGS } from '../i18n';
@@ -15,7 +17,7 @@ import type { FamilySeed } from '../family/draft';
 import { FAMILY } from '../family/strings';
 import { FlowHeading, Icon } from '../ui/Icon';
 
-type Phase = 'photo' | 'task' | 'working' | 'result' | 'error';
+type Phase = 'photo' | 'task' | 'working' | 'result' | 'input-list' | 'error';
 type FlowError = { kind: 'timeout' } | { kind: 'other'; message: string };
 
 const PHOTO_ERR: Record<PhotoErrorCode, 'errNotImage' | 'errHeic' | 'errUnreadable' | 'errTooBig' | 'errTooSmall'> = {
@@ -40,7 +42,9 @@ export function toPlayerSteps(result: GuideResult): PlayerStep[] {
     return {
       id: s.id,
       hotspot: c?.display === 'box' && c.confidence === 'high' ? c.bbox : undefined,
-      button: c ? (s.screenLabel ? `${c.label} → ${s.screenLabel}` : c.label) : s.screenLabel ?? undefined,
+      confirmation: result.hdmi && s.id === 'select-input' ? HDMI_COPY[result.locale].sawPicture :
+        result.hdmi && s.id === 'highlight-input' && s.screenLabel ? hdmiText(HDMI_COPY[result.locale].highlighted, s.screenLabel) : undefined,
+      button: c ? (s.screenLabel ? `${c.label} → ${s.screenLabel}` : c.label) : result.hdmi ? undefined : s.screenLabel ?? undefined,
       instruction: s.instruction,
       expected: s.expectedState,
       recovery: s.mismatchRecovery,
@@ -53,7 +57,12 @@ function ScreenPhotoReview({ photo, locale, cancel, send }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const g = GM_STRINGS[locale];
-  useEffect(() => { const el = dialog.current; el?.showModal(); return () => el?.close(); }, []);
+  useEffect(() => {
+    const el = dialog.current;
+    if (el?.showModal) el.showModal();
+    else el?.setAttribute('open', '');
+    return () => el?.close?.();
+  }, []);
   return <dialog ref={dialog} lang={locale} className="screen-review" aria-labelledby="screen-review-title"
     onCancel={e => { e.preventDefault(); cancel(); }}>
     <div className="stack"><h2 id="screen-review-title">{g.screenPreview}</h2>
@@ -73,6 +82,9 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
   const [consent, setConsent] = useState(false);
   const [photo, setPhoto] = useState<NormalizedPhoto | null>(null);
   const [pendingScreen, setPendingScreen] = useState<{ photo: NormalizedPhoto; answers: ClarificationAnswers } | null>(null);
+  const [screenError, setScreenError] = useState<string | null>(null);
+  const opener = useRef<GuideResult | null>(null);
+  const screenGallery = useRef<HTMLInputElement>(null);
   const screenAnswers = useRef<ClarificationAnswers>({});
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -110,6 +122,13 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
   useEffect(() => () => { if (photo) URL.revokeObjectURL(photo.url); }, [photo]);
   useEffect(() => { if (initialFile) void onPhoto(initialFile); }, [initialFile]);
 
+  useEffect(() => {
+    const pickers = [screenRef.current, screenGallery.current];
+    const cancelled = () => setScreenError(HDMI_COPY[language].noCapture);
+    for (const el of pickers) el?.addEventListener('cancel', cancelled);
+    return () => { for (const el of pickers) el?.removeEventListener('cancel', cancelled); };
+  }, [phase, result, language]);
+
   const recorder = useRecorder(async (blob) => {
     if (!consent) return;
     const controller = new AbortController();
@@ -131,6 +150,10 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
 
   const onPhoto = async (file: File) => {
     const attempt = ++photoAttempt.current;
+    abort.current?.abort();
+    transcribeAbort.current?.abort();
+    setTranscribing(false);
+    setPhase('photo');
     setPhotoBusy(true);
     setPhotoError(null);
     try {
@@ -138,6 +161,12 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
       if (attempt !== photoAttempt.current) { URL.revokeObjectURL(p.url); return; }
       setConsent(false);
       lastScreen.current = undefined;
+      screenAnswers.current = {};
+      opener.current = null;
+      setPendingScreen(null);
+      setScreenError(null);
+      setResult(null);
+      setError(null);
       setPhoto(p);
       setAnswers({});
     } catch (err) {
@@ -151,19 +180,29 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
   const generate = async (nextAnswers: ClarificationAnswers = answers, screenImage?: Blob) => {
     if (!photo || !consent || !health?.guide) return;
     abort.current?.abort();
+    photoAttempt.current++;
     const ctrl = new AbortController();
     abort.current = ctrl;
     setAnswers(nextAnswers);
+    if (nextAnswers.hdmi?.typedLabels) lastScreen.current = undefined;
+    setScreenError(null);
     if (screenImage) lastScreen.current = screenImage;
     setPhase('working');
     setError(null);
     try {
       const r = await requestGuide({ image: photo.blob, screenImage: screenImage ?? lastScreen.current, request: request.trim(), locale: language, appLocale: locale, answers: nextAnswers }, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      if (r.status === 'hdmi_checkpoint') opener.current = r;
       setResult(r);
       setGuideKey((k) => k + 1);
       setPhase('result');
     } catch (err) {
       if (ctrl.signal.aborted) return;
+      if (nextAnswers.hdmi?.listVisible) {
+        setScreenError(err instanceof ApiError ? err.message : g.tryAgain);
+        setPhase('input-list');
+        return;
+      }
       const timedOut = err instanceof ApiError && err.code === 'timeout';
       setError(timedOut ? { kind: 'timeout' } : { kind: 'other', message: err instanceof ApiError ? err.message : String(err) });
       setPhase('error');
@@ -174,18 +213,32 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
     const attempt = ++photoAttempt.current;
     const next = { ...answers, ...screenAnswers.current };
     screenAnswers.current = {};
+    if (next.hdmi) next.hdmi = { photoId: next.hdmi.photoId, layoutId: next.hdmi.layoutId, listVisible: true };
+    setScreenError(null);
     try {
       const p = await normalizePhoto(file);
       if (attempt !== photoAttempt.current) { URL.revokeObjectURL(p.url); return; }
       setPendingScreen({ photo: p, answers: next });
     } catch (err) {
-      setError({ kind: 'other', message: g[PHOTO_ERR[err instanceof PhotoError ? err.code : 'unreadable']] });
+      if (attempt !== photoAttempt.current) return;
+      const code = err instanceof PhotoError ? err.code : 'unreadable';
+      const message = next.hdmi && code === 'too_small' ? HDMI_COPY[language].screenSize : g[PHOTO_ERR[code]];
+      if (next.hdmi) { setScreenError(message); return; }
+      setError({ kind: 'other', message });
       setPhase('error');
     }
   };
 
   const startOver = () => {
     abort.current?.abort();
+    transcribeAbort.current?.abort();
+    photoAttempt.current++;
+    opener.current = null;
+    screenAnswers.current = {};
+    setPendingScreen(null);
+    setPhotoBusy(false);
+    setPhotoError(null);
+    setScreenError(null);
     setPhase('photo');
     setResult(null);
     setConsent(false);
@@ -203,6 +256,8 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
         if (f) void onScreenPhoto(f);
       }}
     />
+    <input ref={screenGallery} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden data-testid="screen-gallery"
+      onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void onScreenPhoto(file); }} />
     {pendingScreen && <ScreenPhotoReview photo={pendingScreen.photo} locale={locale} cancel={() => setPendingScreen(null)}
       send={() => { void generate(pendingScreen.answers, pendingScreen.photo.blob); setPendingScreen(null); }} />}
   </>);
@@ -299,7 +354,7 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
         </label>
         <div className="nav-row">
           <button type="button" className="btn btn-secondary" disabled={transcribing || rec === 'recording' || rec === 'starting'} onClick={() => setPhase('photo')}>← {g.backToPhoto}</button>
-          <button type="button" className="btn btn-primary" disabled={!health?.guide || !consent || !request.trim() || transcribing || rec === 'recording' || rec === 'starting'} onClick={() => generate({})}>{g.generate}</button>
+          <button type="button" className="btn btn-primary" disabled={!health?.guide || !consent || !request.trim() || transcribing || rec === 'recording' || rec === 'starting'} onClick={() => { opener.current = null; lastScreen.current = undefined; void generate({}); }}>{g.generate}</button>
         </div>
       </main>
     );
@@ -310,7 +365,7 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
       <main className="flow" aria-busy="true">
         <FlowHeading icon="camera" title={g.title} headingRef={headingRef} />
         <p role="status" className="working"><span className="spinner" aria-hidden="true" /> {g.working}</p>
-        <button type="button" className="btn btn-secondary" onClick={() => { abort.current?.abort(); setPhase('task'); }}>{g.cancel}</button>
+        <button type="button" className="btn btn-secondary" onClick={() => { abort.current?.abort(); photoAttempt.current++; setPhase(answers.hdmi?.listVisible && result ? 'input-list' : 'task'); }}>{g.cancel}</button>
       </main>
     );
   }
@@ -333,11 +388,51 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
   const rl = result.locale;
   const rg = GM_STRINGS[locale];
 
-  if (result.status === 'ready') {
+  const h = HDMI_COPY[rl];
+  const checkpoint = result.status === 'hdmi_checkpoint';
+  const continuation = result.hdmi;
+  const showList = () => {
+    if (!continuation) return;
+    setAnswers(a => ({ ...a, hdmi: { photoId: continuation.photoId, layoutId: continuation.layoutId, listVisible: true } }));
+    setScreenError(null);
+    setPhase('input-list');
+  };
+  const resetList = () => {
+    photoAttempt.current++;
+    abort.current?.abort();
+    setPendingScreen(null);
+    lastScreen.current = undefined;
+    showList();
+  };
+  const backToSource = () => {
+    photoAttempt.current++;
+    setPendingScreen(null);
+    lastScreen.current = undefined;
+    setScreenError(null);
+    if (!continuation) return;
+    const next = { ...answers, hdmi: { photoId: continuation.photoId, layoutId: continuation.layoutId } };
+    setAnswers(next);
+    if (opener.current?.hdmi?.photoId === continuation.photoId) {
+      setResult(opener.current); setGuideKey(k => k + 1); setPhase('result');
+    } else void generate(next);
+  };
+  if (continuation && (phase === 'input-list' || (result.status === 'needs_clarification' && continuation.stage === 'select_input'))) {
+    const current = phase === 'result' ? result.clarification : null;
+    return <InputList key={guideKey} locale={rl} uiLocale={locale} headingRef={headingRef} initialLabels={answers.hdmi?.typedLabels}
+      choices={current?.kind === 'choose_input' ? continuation.labels : []} question={current?.question} error={screenError}
+      inputs={screenInput()} camera={() => screenRef.current?.click()} gallery={() => screenGallery.current?.click()}
+      useLabels={typedLabels => generate({ ...answers, hdmi: { photoId: continuation.photoId, layoutId: continuation.layoutId, listVisible: true, typedLabels } })}
+      choose={target => generate({ ...answers, hdmi: { ...answers.hdmi, photoId: continuation.photoId, layoutId: continuation.layoutId, listVisible: true, target } })}
+      back={backToSource} />;
+  }
+
+  if (result.status === 'ready' || checkpoint) {
+    const first = opener.current;
+    const familyOpener = continuation && first?.hdmi?.photoId === continuation.photoId && first.hdmi.layoutId === continuation.layoutId ? first : null;
     const narrationById = new Map(result.steps.map((s) => [s.id, s.narration]));
     return (
       <div lang={rl}>
-        {screenInput()}
+        {!continuation && screenInput()}
         <GuidePlayer
           key={guideKey}
           title={result.task.summary || rg.title}
@@ -346,10 +441,18 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
           steps={toPlayerSteps(result)}
           image={{ src: photo.url, width: photo.width, height: photo.height, alt: GM_STRINGS[rl].photoTitle, frameWidth: '100%' }}
           locale={rl}
-          labels={{ no: GM_STRINGS[rl].screenNo }}
+          onConfirmLast={checkpoint ? showList : undefined}
+          labels={checkpoint ? { yes: h.sawList, no: h.didNot, retry: STRINGS[rl].showButton } : { no: GM_STRINGS[rl].screenNo }}
           controls={result.observedControls.filter(c => c.display === 'box').map(c => c.bbox)}
           speak={health?.speech && !health.demo && languages[rl].tts ? (step) => speakUrl(rl, narrationById.get(step.id) ?? step.instruction, result.narrationTokens[step.id] ?? '') : undefined}
-          mismatchExtra={(step) => (
+          mismatchExtra={checkpoint ? () => <button className="btn btn-secondary" onClick={() => {
+            const source = result.steps[0].controlId;
+            opener.current = null;
+            setResult({ ...result, status: 'needs_clarification', steps: [], narrationTokens: {},
+              hdmi: { ...continuation!, stage: 'resolve_source' }, clarification: { kind: 'confirm_button', controlId: source, question: h.sourceConfirm } });
+            setGuideKey(k => k + 1);
+          }}>{h.mark}</button> : continuation ? () =>
+            <button className="btn btn-secondary" onClick={resetList}>{h.listTitle}</button> : (step) => (
             <button
               type="button" lang={locale}
               className="btn btn-secondary"
@@ -363,14 +466,20 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
           )}
           footer={
             <div lang={locale}>
+              {checkpoint && <button className="btn btn-secondary wide" lang={rl} onClick={showList}>{h.already}</button>}
               {result.evidenceRefs.length > 0 && (
                 <p className="evidence">
                   {rg.basedOn}: {result.evidenceRefs.map((r) => r.title).join(' · ')}
                 </p>
               )}
               <button type="button" className="btn btn-secondary wide" onClick={startOver}>↺ {rg.startOver}</button>
-              {onFamily && <button type="button" className="btn btn-secondary wide"
-                onClick={() => onFamily({ source: 'session', result, photo })}>{FAMILY[locale].create}</button>}
+              {onFamily && !checkpoint && (!continuation || familyOpener) && <button type="button" className="btn btn-secondary wide"
+                onClick={() => {
+                  const full = familyOpener
+                    ? { ...result, steps: [...familyOpener.steps, ...result.steps], narrationTokens: { ...familyOpener.narrationTokens, ...result.narrationTokens } }
+                    : result;
+                  onFamily({ source: 'session', result: full, photo });
+                }}>{FAMILY[locale].create}</button>}
             </div>
           }
         />
@@ -399,28 +508,42 @@ export function GuideMe({ locale, initialFile, onFamily }: { locale: Locale; ini
       locale={locale}
       photo={photo}
       headingRef={headingRef}
-      screenInput={screenInput()}
+      screenInput={result.clarification?.kind === 'screen_photo' ? screenInput() : null}
+      replacements={<><PhotoInputs onFile={onPhoto} camRef={camRef} galRef={galRef} />
+        <button className="btn btn-secondary" onClick={() => camRef.current?.click()}>{h.retake}</button>
+        <button className="btn btn-secondary" onClick={() => galRef.current?.click()}>{h.another}</button></>}
+      skip={continuation && result.clarification?.kind !== 'clearer_photo' ? showList : undefined}
       onScreenPhoto={() => { screenAnswers.current = {}; screenRef.current?.click(); }}
-      onRetake={() => { setAnswers({}); setPhase('photo'); }}
-      onAnswer={(a) => generate({ ...answers, ...a, confirmedControlIds: [...(answers.confirmedControlIds ?? []), ...(a.confirmedControlIds ?? [])], rejectedControlIds: [...(answers.rejectedControlIds ?? []), ...(a.rejectedControlIds ?? [])], textOnlyControlIds: [...(answers.textOnlyControlIds ?? []), ...(a.textOnlyControlIds ?? [])], userControls: [...(answers.userControls ?? []), ...(a.userControls ?? [])] })}
+      onAnswer={a => {
+        const replaced = new Set(a.userControls?.map(c => c.id));
+        const rejected = new Set([...(answers.rejectedControlIds ?? []), ...(a.rejectedControlIds ?? [])]);
+        const confirmed = [...(answers.confirmedControlIds ?? []).filter(id => !rejected.has(id)), ...(a.confirmedControlIds ?? [])];
+        void generate({ ...answers, ...a, hdmi: continuation ? { photoId: continuation.photoId, layoutId: continuation.layoutId } : undefined,
+          confirmedControlIds: [...new Set(confirmed)], rejectedControlIds: [...rejected],
+          textOnlyControlIds: [...new Set([...(answers.textOnlyControlIds ?? []), ...(a.textOnlyControlIds ?? [])])],
+          userControls: [...(answers.userControls ?? []).filter(c => !replaced.has(c.id)), ...(a.userControls ?? [])] });
+      }}
       onStartOver={startOver}
     />
   );
 }
 
-function Clarify({ result, locale, photo, headingRef, screenInput, onScreenPhoto, onRetake, onAnswer, onStartOver }: {
+function Clarify({ result, locale, photo, headingRef, screenInput, onScreenPhoto, replacements, skip, onAnswer, onStartOver }: {
   result: GuideResult;
   locale: Locale;
   photo: NormalizedPhoto;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   screenInput: React.ReactNode;
   onScreenPhoto: () => void;
-  onRetake: () => void;
+  replacements: React.ReactNode;
+  skip?: () => void;
   onAnswer: (a: ClarificationAnswers) => void;
   onStartOver: () => void;
 }) {
   const g = GM_STRINGS[locale];
   const c = result.clarification!;
+  const hdmi = result.hdmi?.stage === 'resolve_source';
+  const h = HDMI_COPY[result.locale];
   const [text, setText] = useState('');
   const [marking, setMarking] = useState(false);
   const [mark, setMark] = useState<BBox | null>(null);
@@ -431,11 +554,25 @@ function Clarify({ result, locale, photo, headingRef, screenInput, onScreenPhoto
       <FlowHeading icon="camera" title={g.clarifyTitle} headingRef={headingRef} />
       {result.demo && <p className="badge badge-demo">⚠ {g.demoBadge}</p>}
       <p className="question" role="alert" lang={result.locale}>{c.question}</p>
+      {c.photoIssue === 'not_remote' && <p>{g.photoHelp}</p>}
       {screenInput}
 
-      {c.kind === 'clearer_photo' && (
-        <button type="button" className="btn btn-primary" onClick={onRetake}>↺ {g.retake}</button>
-      )}
+      {(hdmi || c.kind === 'clearer_photo') && <>
+        <RemoteImage src={photo.url} width={photo.width} height={photo.height} alt={g.photoTitle} frameWidth="100%"
+          hotspot={marking ? mark ?? undefined : control?.bbox} ringStyle={marking ? 'mark' : 'guide'}
+          hint={marking ? g.tapHint : ''} failedText={g.errUnreadable}
+          onTap={marking ? pt => setMark(boxAroundTap(pt, photo)) : undefined} />
+        {hdmi && c.kind !== 'clearer_photo' && <div className="stack" lang={result.locale}>
+          {!marking && control && <button className="btn btn-primary" onClick={() => onAnswer({ confirmedControlIds: [control.id] })}>{g.yesThatsIt}</button>}
+          {!marking ? <button className="btn btn-secondary" onClick={() => setMarking(true)}>{h.mark}</button> :
+            <button className="btn btn-primary" disabled={!mark} onClick={() => {
+              if (mark) onAnswer({ rejectedControlIds: result.observedControls.filter(b => b.role === 'input').map(b => b.id),
+                userControls: [{ id: 'source', role: 'input', label: 'Source/Input', bbox: mark }], confirmedControlIds: ['user_source'] });
+            }}>{h.confirmMark}</button>}
+          {skip && <button className="btn btn-secondary" onClick={skip}>{h.already}</button>}
+        </div>}
+        {replacements}
+      </>}
 
       {c.kind === 'screen_photo' && (
         <button type="button" className="btn btn-primary" onClick={onScreenPhoto}>{g.screenPhoto}</button>
@@ -451,7 +588,7 @@ function Clarify({ result, locale, photo, headingRef, screenInput, onScreenPhoto
         </form>
       )}
 
-      {c.kind === 'confirm_button' && control && (
+      {!hdmi && c.kind === 'confirm_button' && control && (
         <>
           <RemoteImage
             src={photo.url}

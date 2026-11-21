@@ -36,7 +36,9 @@ export interface StepPlayerProps {
   locale: GuideLanguage;
   contentLocale?: GuideLanguage;
   t: Strings;
-  labels?: { yes?: string; no?: string };
+  labels?: { yes?: string; no?: string; retry?: string };
+  /** A partial guide continues outside the player after its last confirmation. */
+  onConfirmLast?: () => void;
   /** On-demand narration (V2). Returns a playable URL; callers cache per session. */
   speak?: (step: PlayerStep) => Promise<string>;
   /** Extra recovery actions shown on mismatch (V2: photo of the TV screen). */
@@ -48,7 +50,7 @@ export interface StepPlayerProps {
 
 const BADGE_ICON = { sample: '⚠', verified: '✓', demo: '⚠', live: 'ⓘ' } as const;
 
-export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, steps, image, locale, contentLocale, t, labels, speak, mismatchExtra, footer, legacy = false, controls }: StepPlayerProps) {
+export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, steps, image, locale, contentLocale, t, labels, onConfirmLast, speak, mismatchExtra, footer, legacy = false, controls }: StepPlayerProps) {
   const total = steps.length;
   const reducer = useMemo(() => progressReducer(total), [total]);
   const [state, dispatch] = useReducer(reducer, START);
@@ -195,7 +197,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
         <p lang={contentLocale}>{step.recovery}</p>
         <p className="recovery-note">{t.mismatchNote}</p>
         <button type="button" className="btn btn-primary" onClick={() => dispatch({ type: 'retry' })}>
-          {t.retry}
+          {labels?.retry ?? t.retry}
         </button>
         {mismatchExtra?.(step)}
         {!legacy && back}
@@ -205,7 +207,7 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
       </div>
     ) : (
       <div className="answer">
-        <button type="button" className="btn btn-yes" lang={step.confirmation ? contentLocale : undefined} onClick={() => dispatch({ type: 'confirm' })}>
+        <button type="button" className="btn btn-yes" lang={step.confirmation ? contentLocale : undefined} onClick={() => onConfirmLast && state.index === total - 1 ? onConfirmLast() : dispatch({ type: 'confirm' })}>
           {legacy && <span aria-hidden="true">✓</span>} {step.confirmation ?? labels?.yes ?? t.yes}
           {!legacy && <Icon name="arrow" />}
         </button>

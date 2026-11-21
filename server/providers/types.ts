@@ -24,6 +24,8 @@ export interface RemoteObservation {
 
 export interface ScreenObservation {
   isTvScreen: boolean;
+  isInputList: boolean;
+  selectedLabel: string | null;
   /** Exact on-screen text labels as printed, e.g. "HDMI 1". */
   labels: string[];
   summary: string;

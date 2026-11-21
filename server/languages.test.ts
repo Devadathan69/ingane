@@ -47,8 +47,18 @@ describe('guide and speech languages', () => {
     const form = new FormData();
     form.set('consent','true'); form.set('locale',l); form.set('request',request);
     const image = new Blob([new Uint8Array(fakeImage().bytes)], {type:'image/png'});
-    form.set('image',image,'remote.png'); form.set('screenImage',image,'screen.png');
-    form.set('answers',JSON.stringify({confirmedControlIds:['ok']}));
+    form.set('image',image,'remote.png');
+    const send = async () => (await (await app.request('/api/guide', {method:'POST',body:form})).json()) as GuideResult;
+    const source = await send();
+    expect(source.clarification?.controlId).toBe('input');
+    const hdmi = { photoId: source.hdmi!.photoId, layoutId: source.hdmi!.layoutId };
+    form.set('answers', JSON.stringify({ hdmi, confirmedControlIds: ['input'] }));
+    const opening = await send();
+    expect(opening.status).toBe('hdmi_checkpoint');
+    expect(opening.steps[0].instruction).toMatch(script);
+    expect(opening.steps[0].controlId).toBe('input');
+    form.set('screenImage',image,'screen.png');
+    form.set('answers',JSON.stringify({hdmi: { ...hdmi, listVisible: true }, confirmedControlIds:['input']}));
     const res = await app.request('/api/guide', {method:'POST',body:form});
     expect(res.status).toBe(200);
     const result = await res.json() as GuideResult;
@@ -57,7 +67,7 @@ describe('guide and speech languages', () => {
       expect(step.instruction).toMatch(script);
       expect(step.narration).toContain('HDMI 2');
       expect(step.screenLabel).toBe('HDMI 2');
-      expect(result.observedControls.some(c=>c.id===step.controlId && c.display==='box')).toBe(true);
+      expect(step.controlId).toBeNull(); // No evidence for the focus or a reliable OK button.
     }
     result.steps[0].instruction = 'Choose HDMI 2.';
     expect(validateGuideResult(result,{screenLabels:['HDMI 2']}).join()).toContain(languages[l].name + ' script');

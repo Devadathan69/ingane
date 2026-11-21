@@ -1,5 +1,7 @@
-import { bboxErrors, GuideResult, MALAYALAM_SCRIPT, type GuideResult as Result } from '../shared/guide';
+import { overlapRatio, bboxErrors, GuideResult, MALAYALAM_SCRIPT, type GuideResult as Result } from '../shared/guide';
 import { languages, type GuideLanguage } from '../shared/languages';
+import { HDMI_COPY, hdmiText } from '../shared/hdmi-copy';
+import { hasSourceLabel, isMenuOpener, selectKey } from './hdmi';
 import { findReference } from './references';
 
 /**
@@ -8,7 +10,16 @@ import { findReference } from './references';
  */
 const nativeScript: Partial<Record<GuideLanguage, RegExp>> = { ml: MALAYALAM_SCRIPT, hi: /\p{Script=Devanagari}/u, ta: /\p{Script=Tamil}/u, kn: /\p{Script=Kannada}/u, te: /\p{Script=Telugu}/u };
 
-export function validateGuideResult(result: unknown, ctx: { screenLabels: string[] }): string[] {
+export interface ValidationContext {
+  screenLabels: string[];
+  hdmiPhotoId?: string;
+  confirmed?: string[];
+  listVisible?: boolean;
+  selectedLabel?: string | null;
+  inputEvidence?: 'typed-inputs' | 'screen-photo';
+}
+
+export function validateGuideResult(result: unknown, ctx: ValidationContext): string[] {
   const parsed = GuideResult.safeParse(result);
   if (!parsed.success) return parsed.error.issues.map((i) => `schema: ${i.path.join('.')}: ${i.message}`);
   const r: Result = parsed.data;
@@ -34,11 +45,59 @@ export function validateGuideResult(result: unknown, ctx: { screenLabels: string
     else if (known.status !== 'approved') errors.push(`ref ${ref.id}: reference is not approved`);
   }
 
-  if (r.status === 'ready') {
+  const isHdmi = r.task.type === 'switch_hdmi';
+  const checkpoint = r.status === 'hdmi_checkpoint';
+  if (r.hdmi && (!isHdmi || r.hdmi.photoId !== ctx.hdmiPhotoId)) errors.push('HDMI continuation belongs to a different photo or task');
+  if (isHdmi && r.status !== 'unsupported' && !r.hdmi) errors.push('HDMI requires a bound continuation');
+  if (r.hdmi && (r.hdmi.labels.length !== ctx.screenLabels.length || r.hdmi.labels.some(l => !ctx.screenLabels.includes(l))))
+    errors.push('continuation must contain only supplied input labels');
+  if (checkpoint) {
+    const s = r.steps[0];
+    const sources = r.observedControls.filter(isMenuOpener);
+    const c = sources.find(x => x.id === s?.controlId);
+    const confirmed = c && ctx.confirmed?.includes(c.id);
+    const t = HDMI_COPY[r.locale];
+    if (!isHdmi || r.hdmi?.stage !== 'await_input_list' || ctx.listVisible || r.steps.length !== 1 || r.evidenceRefs.length ||
+        !c || c.confidence !== 'high' || (!confirmed && (c.source === 'user' || !hasSourceLabel(c) || sources.length !== 1 ||
+          r.observedControls.some(o => o.id !== c.id && overlapRatio(c.bbox, o.bbox) > 0))) ||
+        s.screenLabel !== null || s.id !== 'open-input-list' || s.instruction !== hdmiText(t.press, c.label) || s.expectedState !== t.listExpected ||
+        s.narration !== s.instruction + ' ' + t.listExpected || s.mismatchRecovery !== t.checkSource)
+      errors.push('checkpoint requires exactly one grounded input-menu opener');
+  }
+  if (isHdmi && r.status === 'ready') {
+    const target = r.steps[0]?.screenLabel;
+    const t = HDMI_COPY[r.locale];
+    if (!ctx.listVisible || r.hdmi?.stage !== 'select_input' || !ctx.inputEvidence || !target ||
+        r.evidenceRefs.length !== 1 || r.evidenceRefs[0].kind !== 'screen' || r.evidenceRefs[0].id !== ctx.inputEvidence ||
+        r.steps.some(s => s.screenLabel !== target))
+      errors.push('HDMI selection requires an acknowledged list and its exact target');
+    if (target) {
+      const alreadyFocused = ctx.inputEvidence === 'screen-photo' && ctx.selectedLabel === target;
+      const final = r.steps.at(-1)!;
+      const ok = final.controlId ? selectKey(r.observedControls) : undefined;
+      const instruction = hdmiText(ok ? t.selectKey : t.select, target, ok?.label);
+      if (r.steps.length !== (alreadyFocused ? 1 : 2) || final.id !== 'select-input' || final.controlId !== (ok?.id ?? null) ||
+          final.instruction !== instruction || final.narration !== instruction || final.expectedState !== t.picture)
+        errors.push('HDMI must end with an evidenced selection and picture confirmation');
+      if (!alreadyFocused) {
+        const first = r.steps[0];
+        if (first.id !== 'highlight-input' || first.controlId !== null || first.instruction !== hdmiText(t.highlight, target) ||
+            first.narration !== first.instruction || first.expectedState !== hdmiText(t.highlighted, target))
+          errors.push('HDMI needs confirmed focus before selecting the target');
+      }
+    }
+  }
+  if (isHdmi && r.status === 'needs_clarification') {
+    const kind = r.clarification?.kind;
+    const allowed = ctx.listVisible ? ['input_list', 'choose_input'] : ['confirm_button', 'mark_source', 'clearer_photo'];
+    if (!kind || !allowed.includes(kind) || r.hdmi?.stage !== (ctx.listVisible ? 'select_input' : 'resolve_source'))
+      errors.push('invalid HDMI clarification stage');
+  }
+  if (r.status === 'ready' || checkpoint) {
     if (!r.steps.length) errors.push('ready guide has no steps');
     if (r.clarification) errors.push('ready guide must not carry a clarification');
     if (r.unsupportedReason) errors.push('ready guide must not carry an unsupported reason');
-    if (!r.evidenceRefs.length) errors.push('ready guide must cite evidence');
+    if (!checkpoint && !r.evidenceRefs.length) errors.push('ready guide must cite evidence');
     const stepIds = new Set<string>();
     for (const s of r.steps) {
       const at = `step ${s.id}`;

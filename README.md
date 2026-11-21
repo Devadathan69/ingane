@@ -22,7 +22,9 @@ The video starts with a real photo request, then follows a family guide from the
 4. Choose **Share link**, review who can open it, and create the read-only copy. **Share on WhatsApp** opens WhatsApp so you can choose the conversation and send it. **Copy link** also works.
 5. Amma opens the link without signing in. She can listen, replay, go back, or choose **My screen looks different**. Each step waits for her confirmation.
 
-To help with a different remote, take a picture or choose one from the gallery. Review it, choose the guide language and describe the task. Ingane asks for consent before sending the photo or request. If a button or TV menu is unclear, the app can ask the user to confirm the button or show the TV screen. A completed photo guide can be copied into Family Guides. A creator can also start with a photo and mark buttons by hand.
+To use your own remote, take a photo or choose one from the gallery. Review it, choose the guide language, describe the task and give consent to send the request. For HDMI, Ingane first highlights the Source/Input button on your photo. If the button is unclear, you can mark and confirm it yourself or choose another photo.
+
+After you confirm the TV’s input list is open, type the exact labels you see or review and send a TV-screen photo. Choose the port your device is connected to when Ingane asks. The walkthrough finishes when you confirm the device’s picture appeared. You can copy a complete photo guide into Family Guides or start a family guide by marking buttons on a photo.
 
 ## Languages and coverage
 
@@ -65,7 +67,7 @@ For live service, set `INGANE_PROVIDER=live` and configure only the features you
 | `OPENAI_MODEL` | Writes the guide steps. Defaults to `gpt-6-luna`. |
 | `OPENAI_VISION_MODEL` | Locates remote buttons and reads TV screen labels. The standard configuration uses `gpt-5.5`. |
 | `SARVAM_API_KEY` | Spoken requests and read-aloud through the official Sarvam AI SDK. Defaults are `saaras:v4` for transcription and `bulbul:v3` for narration. Text works independently. |
-| `NARRATION_SECRET` | A stable random server secret for narration signatures and hosted authentication. |
+| `NARRATION_SECRET` | A stable random server secret for narration, photo-guide continuations and hosted authentication. Use the same value across server instances. |
 | `INGANE_FAMILY_DATABASE_URL` | Hosted private PostgreSQL storage for passkeys, shared snapshots, photos and audio. |
 
 `npm run check:openai` sends a small checkerboard to the configured vision model. It uses provider credit. The active configuration and language-specific voice settings are listed in [.env.example](.env.example).
@@ -115,7 +117,7 @@ node --import tsx scripts/check-family-sharing.mjs "<public-build-directory>"
 
 The second command registers disposable creator passkeys, makes an HDMI 2 guide in Malayalam, opens its link in a separate signed-out browser, checks ownership and draft isolation, replaces the snapshot and revokes access to its media. It uses a disposable local database and requires no live keys.
 
-For the mobile photo, preset and player suites, generate the licensed test fixtures with `python scripts/prepare-fixtures.py` (Python and Pillow). Start the built server with `INGANE_PROVIDER=mock` and `INGANE_MOCK_FAILURES=1` in its environment, then run:
+The mobile photo suite draws its own test images. To run the browser suites, start the built server on port 8787 with `INGANE_PROVIDER=mock` and `INGANE_MOCK_FAILURES=1` in its environment.
 
 ```sh
 node scripts/e2e-check.mjs http://127.0.0.1:8787/

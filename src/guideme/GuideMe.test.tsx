@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { GuideResult } from '../../shared/guide';
+import { HDMI_COPY } from '../../shared/hdmi-copy';
 import { STRINGS } from '../i18n';
 import { hotspotStyle } from '../player/RemoteImage';
 import { StepPlayer } from '../player/StepPlayer';
@@ -255,5 +256,133 @@ describe('GuideMe flow', () => {
       expect(sent.get('consent')).toBe('true');
       expect(sent.get('image')).toMatchObject({ type: 'image/jpeg', size: 1 });
     }
+  });
+});
+
+const h = HDMI_COPY.en;
+const continuation = { stage: 'await_input_list' as const, photoId: '1'.repeat(64), layoutId: '2'.repeat(64), labels: [] };
+const openerResult = () => result({ status: 'hdmi_checkpoint', task: { type: 'switch_hdmi', summary: h.title }, hdmi: continuation,
+  observedControls: [{ id: 'src', role: 'input', label: 'SOURCE', confidence: 'high', source: 'vision', display: 'box', bbox: { x: .4, y: .72, w: .16, h: .05 } }],
+  evidenceRefs: [], steps: [{ id: 'open-input-list', controlId: 'src', screenLabel: null, instruction: 'Press SOURCE once on your remote.',
+    expectedState: h.listExpected, narration: 'Press SOURCE once on your remote. ' + h.listExpected, mismatchRecovery: h.checkSource }],
+  narrationTokens: { 'open-input-list': 'signed' } });
+const menuResult = () => result({ ...openerResult(), status: 'ready', hdmi: { ...continuation, stage: 'select_input', labels: ['TV','HDMI 2'] },
+  steps: [{ id: 'select-input', controlId: null, screenLabel: 'HDMI 2', instruction: 'With HDMI 2 highlighted, select it.',
+    expectedState: h.picture, narration: 'With HDMI 2 highlighted, select it.', mismatchRecovery: h.recheckList }] });
+
+describe('two-stage photo HDMI', () => {
+  it('shows the practice remote’s SOURCE first in Malayalam when the observation says dark, with the TV chooser absent', async () => {
+    // Run the real server decision in this test process. The browser form only receives synthetic bytes.
+    const { darkRemoteHdmiOpener } = await vi.importActual<{ darkRemoteHdmiOpener(): Promise<GuideResult> }>('../../server/test-helpers');
+    const opening = await darkRemoteHdmiOpener();
+    const request = 'HDMI 2';
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('health') ? json({ guide: true, demo: true }) : json(opening)));
+    const user = userEvent.setup();
+    render(<GuideMe locale="ml" onFamily={vi.fn()} />);
+    await toTaskStep(user, 'ml');
+    await user.type(screen.getByRole('textbox'), request);
+    await user.click(screen.getByRole('button', { name: GM_STRINGS.ml.generate }));
+    expect(await screen.findByText(HDMI_COPY.ml.listExpected)).toBeTruthy();
+    expect(screen.getByRole('button', { name: HDMI_COPY.ml.sawList })).toBeTruthy();
+    expect(screen.getByRole('img', { name: GM_STRINGS.ml.photoTitle }).getAttribute('src')).toBe('blob:photo');
+    expect(screen.queryByTestId('screen-input')).toBeNull();
+    expect(screen.queryByRole('button', { name: HDMI_COPY.ml.camera })).toBeNull();
+    expect(screen.queryByText(STRINGS.ml.doneTitle)).toBeNull();
+  });
+
+  it.each(['confirm', 'already open'])('requires an explicit list acknowledgement (%s), then accepts labels without camera permission', async route => {
+    const user = userEvent.setup();
+    const sent: FormData[] = [];
+    const onFamily = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('health')) return json({ guide: true, demo: true, speech: false });
+      sent.push(init!.body as FormData);
+      return json(sent.length === 1 ? openerResult() : menuResult());
+    }));
+    render(<GuideMe locale="en" onFamily={onFamily} />);
+    await toTaskStep(user);
+    await user.type(screen.getByRole('textbox'), 'switch to HDMI 2');
+    await user.click(screen.getByRole('button', { name: 'Make my guide' }));
+    await screen.findByText('Press SOURCE once on your remote.');
+    expect(screen.queryByTestId('screen-input')).toBeNull();
+    expect(screen.queryByTestId('screen-gallery')).toBeNull();
+    expect(screen.queryByText('Make a copy for family')).toBeNull();
+    await user.click(screen.getByRole('button', { name: h.didNot }));
+    expect(screen.getByText(h.checkSource)).toBeTruthy();
+    expect(screen.queryByText(h.camera)).toBeNull();
+    await user.click(screen.getByRole('button', { name: STRINGS.en.showButton }));
+    await user.click(screen.getByRole('button', { name: route === 'confirm' ? h.sawList : h.already }));
+    expect(screen.queryByText(STRINGS.en.doneTitle)).toBeNull();
+    expect(screen.queryByText('Make a copy for family')).toBeNull();
+    expect(screen.getByRole('button', { name: h.camera })).toBeTruthy();
+    fireEvent(screen.getByTestId('screen-input'), new Event('cancel', { bubbles: true }));
+    expect(screen.getByRole('alert').textContent).toBe(h.noCapture);
+    expect(sent).toHaveLength(1);
+    await user.type(screen.getByLabelText(h.typeLabels), 'TV{Enter}HDMI 2');
+    await user.click(screen.getByRole('button', { name: h.sendLabels }));
+    await screen.findByText(h.picture);
+    expect(screen.queryByText('Press SOURCE once on your remote.')).toBeNull();
+    expect(sent[1].has('screenImage')).toBe(false);
+    expect(sent[1].get('request')).toBe(sent[0].get('request'));
+    expect(JSON.parse(String(sent[1].get('answers'))).hdmi).toMatchObject({ photoId: continuation.photoId, listVisible: true, typedLabels: ['TV','HDMI 2'] });
+    expect(screen.queryByText(STRINGS.en.doneTitle)).toBeNull();
+    await user.click(screen.getByRole('button', { name: h.sawPicture }));
+    expect(screen.getByRole('heading', { name: STRINGS.en.doneTitle })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Make a copy for family' }));
+    expect(onFamily.mock.calls[0][0].result.steps.map((s: { id: string }) => s.id)).toEqual(['open-input-list','select-input']);
+  });
+
+  it('declines a legacy bare screen-photo response before offering any TV file picker', async () => {
+    const user = userEvent.setup();
+    const legacy = result({ task: { type: 'switch_hdmi', summary: h.title }, status: 'needs_clarification', steps: [],
+      clarification: { kind: 'screen_photo', question: 'Send a TV photo now?', controlId: null }, narrationTokens: {} });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('health') ? json({ guide: true, demo: true }) : json(legacy)));
+    render(<GuideMe locale="en" />);
+    await toTaskStep(user);
+    await user.type(screen.getByRole('textbox'), 'switch to HDMI 2');
+    await user.click(screen.getByRole('button', { name: 'Make my guide' }));
+    expect(await screen.findByRole('button', { name: GM_STRINGS.en.tryAgain })).toBeTruthy();
+    expect(screen.queryByTestId('screen-input')).toBeNull();
+    expect(screen.queryByText('Send a TV photo now?')).toBeNull();
+  });
+
+  it('ignores an outstanding response after cancelling and replacing the remote, and keeps only the typed task', async () => {
+    const user = userEvent.setup();
+    let finish!: (r: Response) => void;
+    const sent: FormData[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('health')) return json({ guide: true, demo: true });
+      sent.push(init!.body as FormData);
+      if (sent.length === 1) return json({ ...openerResult(), status: 'needs_clarification', steps: [], narrationTokens: {},
+        clarification: { kind: 'confirm_button', question: h.sourceConfirm, controlId: 'src' }, hdmi: { ...continuation, stage: 'resolve_source' } });
+      if (sent.length === 3) return new Promise<Response>(r => { finish = r; });
+      return json(openerResult());
+    }));
+    render(<GuideMe locale="en" />);
+    await toTaskStep(user);
+    await user.type(screen.getByRole('textbox'), 'switch to HDMI 2');
+    await user.click(screen.getByRole('button', { name: 'Make my guide' }));
+    await user.click(await screen.findByRole('button', { name: /Yes, that’s the button/ }));
+    await user.click(await screen.findByRole('button', { name: h.sawList }));
+    await user.upload(screen.getByTestId('screen-gallery'), new File(['screen'], 'tv.jpg', { type: 'image/jpeg' }));
+    await user.click(await screen.findByRole('button', { name: GM_STRINGS.en.sendScreen }));
+    expect(sent[2].has('screenImage')).toBe(true);
+    expect(JSON.parse(String(sent[2].get('answers'))).confirmedControlIds).toEqual(['src']);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: STRINGS.en.back }));
+    await user.click(screen.getByRole('button', { name: h.didNot }));
+    await user.click(screen.getByRole('button', { name: h.mark }));
+    expect(screen.getByRole('button', { name: h.another })).toBeTruthy();
+    await user.upload(screen.getByTestId('gallery-input'), new File(['y'], 'replacement.jpg', { type:'image/jpeg' }));
+    await act(async () => finish(json(menuResult())));
+    expect(screen.queryByText(h.picture)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Use this photo' }));
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('switch to HDMI 2');
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Make my guide' }));
+    await screen.findByText(h.listExpected);
+    expect(JSON.parse(String(sent[3].get('answers')))).toEqual({});
+    expect(sent[3].has('screenImage')).toBe(false);
   });
 });

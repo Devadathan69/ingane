@@ -2,16 +2,19 @@
 //   npm run build
 //   INGANE_PROVIDER=mock INGANE_MOCK_FAILURES=1 node build/server/index.js
 //   node scripts/e2e-v2.mjs [baseUrl] [staticV1Url]
-// Fixtures are generated into tmp/fixtures (generated locally from the public practice photo).
+// All photos sent by this suite are freshly drawn synthetic fixtures.
 import { chromium } from 'playwright-core';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { makeTestPhotos } from './remote-test-images.mjs';
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:8787/';
 const STATIC = process.argv[3];
-const FX = 'tmp/fixtures';
+if (![BASE, STATIC].filter(Boolean).every(url => ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname))) throw Error('Use a local mock server.');
+const health = await (await fetch(new URL('api/health', BASE))).json();
+if (!health.demo || health.provider !== 'mock') throw Error('This suite requires mock providers.');
 const OUT = 'tmp/shots-v2';
 mkdirSync(OUT, { recursive: true });
-if (!existsSync(`${FX}/practice.jpg`)) throw new Error('Generate fixtures first (see AGENTS.md)');
+const FX = mkdtempSync('tmp/remote-browser-');
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -23,6 +26,8 @@ const browser = await chromium.launch({
   channel: 'chrome',
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 });
+
+await makeTestPhotos(browser, FX);
 
 async function newPage(width, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 800 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, ...opts });
@@ -69,7 +74,7 @@ for (const [source, label] of [['camera','Take a photo of your remote'],['galler
   check(source+' cancellation stays on home with gallery available', await page.locator('.capture-gallery').isVisible());
   opening=page.waitForEvent('filechooser');
   await page.getByRole('button',{name:label,exact:true}).click();
-  await (await opening).setFiles(FX+'/practice.jpg');
+  await (await opening).setFiles(FX+'/remote.jpg');
   await page.getByTestId('photo-preview').waitFor();
   check(source+' enters the existing photo route',new URL(page.url()).searchParams.get('flow') === 'remote');
   await page.getByRole('button',{name:'Use this photo'}).click();
@@ -89,7 +94,7 @@ for (const width of [360, 430]) {
     if (r.url().includes('/api/guide') && r.ok()) guide = await r.json();
   });
   await start(page, 'ml');
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'ഈ ഫോട്ടോ മതി' }).click();
   await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('TV il sound illa');
@@ -127,7 +132,7 @@ for (const width of [360, 430]) {
     if (r.url().includes('/api/guide') && r.ok()) guide = await r.json();
   });
   await start(page);
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
   await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('no sound');
@@ -137,38 +142,46 @@ for (const width of [360, 430]) {
   check('mismatch offers a TV-screen photo', await page.getByRole('button', { name: 'Take a photo of my TV screen' }).isVisible());
   await page.getByRole('button', { name: /Start over/ }).last().click();
 
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
   await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('switch to HDMI 1');
   await page.getByRole('button', { name: 'Make my guide' }).click();
   await page.getByRole('heading', { name: 'One quick question' }).waitFor();
-  check('HDMI without evidence → clarification, not a guide', guide.status === 'needs_clarification' && guide.steps.length === 0 && (await page.getByRole('button', { name: /I see it/ }).count()) === 0);
-  await page.getByTestId('screen-input').setInputFiles(`${FX}/tv-screen.jpg`);
-  await page.getByRole('dialog').waitFor();
-  await page.getByRole('button',{name:'Cancel',exact:true}).click();
-  check('cancelling a local TV-screen preview keeps the clarification open',await page.locator('.question').isVisible());
-  await page.getByTestId('screen-input').setInputFiles(`${FX}/tv-screen.jpg`);
-  await page.getByRole('button',{name:'Send this screen photo for analysis'}).click();
-  await page.getByText(/Is the outlined button/).waitFor();
-  check('screen photo → asks to confirm the uncertain OK button', guide.clarification?.kind === 'confirm_button');
-  await page.screenshot({ path: `${OUT}/confirm-button.png` });
-  await page.getByRole('button', { name: /I’ll tap the right button/ }).click();
+  check('uncertain menu opener shows its candidate on the original photo', guide.clarification?.controlId === 'input' && !await page.getByTestId('screen-input').count());
+  await page.getByRole('button', { name: 'I can mark the Source/Input button' }).click();
   const img = page.locator('.remote-frame img');
   const box = await img.boundingBox();
-  await img.click({ position: { x: box.width * 0.5, y: box.height * 0.56 } });
-  await page.screenshot({ path: `${OUT}/marked-button.png` });
-  await page.getByRole('button', { name: 'Use this button' }).click();
-  await page.waitForSelector('.instruction');
-  check('marked button becomes a user control used by the guide', guide.status === 'ready' && guide.steps.some((s) => s.controlId === 'user_ok'));
-  check('exact English label kept in instruction', (await page.locator('.instruction').textContent()).includes('HDMI 1'));
-  await page.getByRole('button', { name: /I see it/ }).click();
-  const user = guide.observedControls.find((c) => c.id === 'user_ok');
-  const m = await ringMatchesImage(page, user.bbox);
-  check('user-marked ring lands where tapped', m.ok && Math.abs(user.bbox.x + user.bbox.w / 2 - 0.5) < 0.02 && Math.abs(user.bbox.y + user.bbox.h / 2 - 0.56) < 0.02, `${m.d}px`);
+  await img.click({ position: { x: box.width * .5, y: box.height * .71 } });
+  await page.getByRole('button', { name: 'Use this mark for Source/Input' }).click();
+  await page.getByRole('button', { name: 'I see the input list' }).waitFor();
+  const source = guide.observedControls.find(c => c.id === 'user_source');
+  await page.getByTestId('hotspot').waitFor();
+  const mark = await ringMatchesImage(page, source.bbox);
+  check('confirmed Source mark opens only the menu checkpoint', guide.status === 'hdmi_checkpoint' && mark.ok &&
+    Math.abs(source.bbox.x + source.bbox.w / 2 - .5) < .02 && !await page.getByTestId('screen-input').count());
+  await page.getByRole('button', { name: 'That didn’t happen' }).click();
+  check('opener mismatch checks the button without prompting for a TV photo', await page.locator('.recovery').getByText(/Compare the marked button/).isVisible() && !await page.getByTestId('screen-input').count());
+  await page.getByRole('button', { name: 'Find the button' }).click();
+  await page.getByRole('button', { name: 'I see the input list' }).click();
+  check('the list offers camera, gallery and typed labels', await page.getByRole('button', { name: 'Take a photo of the TV input list' }).isVisible() &&
+    await page.getByRole('button', { name: 'Choose a TV photo from gallery' }).isVisible() && await page.getByRole('textbox').isVisible());
+  const beforeScreen = guide;
+  await page.getByTestId('screen-input').setInputFiles(FX + '/tv.jpg');
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  check('cancelling TV preview kept the image local', guide === beforeScreen && await page.getByRole('textbox').isVisible());
+  await page.getByTestId('screen-gallery').setInputFiles(FX + '/tv.jpg');
+  await page.getByRole('button',{name:'Send this screen photo for analysis'}).click();
+  await page.getByRole('button',{name:'I see HDMI 1 highlighted'}).waitFor();
+  check('resumes at the exact input without guessing a button or arrow count', guide.steps[0].id === 'highlight-input' &&
+    !await page.getByTestId('hotspot').count() && (await page.locator('.instruction').textContent()).includes('HDMI 1'));
+  await page.getByRole('button',{name:'I see HDMI 1 highlighted'}).click();
+  await page.getByRole('button',{name:'I see the device’s picture'}).click();
+  check('only actual picture confirmation finishes HDMI', await page.locator('.done').isVisible());
   await page.getByRole('button', { name: /Start over/ }).last().click();
 
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
   await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('set up wifi');
@@ -181,17 +194,17 @@ for (const width of [360, 430]) {
 {
   const { ctx, page } = await newPage(360);
   await start(page);
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   const sharp = Number(await page.getByTestId('photo-preview').getAttribute('data-sharpness'));
   check('sharp photo: no blur warning', (await page.getByTestId('blur-warning').count()) === 0, `sharpness ${sharp}`);
-  await upload(page, `${FX}/practice-blurry.jpg`);
+  await upload(page, `${FX}/blur.jpg`);
   await page.getByTestId('blur-warning').waitFor({ timeout: 5000 }).catch(() => {});
   const blurry = Number(await page.getByTestId('photo-preview').getAttribute('data-sharpness'));
   check('blurry photo: warning + "Use anyway"', (await page.getByTestId('blur-warning').isVisible()) && (await page.getByRole('button', { name: 'Use anyway' }).isVisible()), `sharpness ${blurry}`);
 
-  await upload(page, `${FX}/practice-rotated.jpg`);
-  await page.waitForFunction(() => document.querySelector('[data-testid=photo-preview]')?.getAttribute('data-size') === '315x1365');
-  check('EXIF orientation applied (stored 1365x315 → shown 315x1365)', true);
+  await upload(page, `${FX}/rotated.jpg`);
+  await page.waitForFunction(() => document.querySelector('[data-testid=photo-preview]')?.getAttribute('data-size') === '214x760');
+  check('EXIF orientation applied (stored 760x214 → shown 214x760)', true);
   let body;
   await page.route('**/api/guide', async (route) => {
     body = route.request().postDataBuffer();
@@ -233,7 +246,7 @@ for (const width of [360, 430]) {
 {
   const { ctx, page } = await newPage(360, { permissions: ['microphone'] });
   await start(page, 'ml');
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'ഈ ഫോട്ടോ മതി' }).click();
   await page.getByRole('checkbox').check();
   const mic = page.getByRole('button', { name: /അമർത്തിപ്പിടിച്ച് പറയുക/ });
@@ -253,7 +266,7 @@ for (const width of [360, 430]) {
     navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
   });
   await start(page);
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: /Hold to talk/ }).focus();
@@ -275,7 +288,7 @@ for (const width of [360, 430]) {
     await route.continue({ headers });
   });
   await start(page);
-  await upload(page, `${FX}/practice.jpg`);
+  await upload(page, `${FX}/remote.jpg`);
   await page.getByRole('button', { name: 'Use this photo' }).click();
   await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('no sound');

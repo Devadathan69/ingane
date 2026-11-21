@@ -85,15 +85,8 @@ function mockPlan(input: PlannerInput): PlannerOutput {
   }
   if (type === 'go_home') return { ...base, taskSummary: t.goHome, decision: 'ready', evidenceRefIds: ['generic-home'], steps: [step('s1', byRole('home') ?? 'home', null, t.home)] };
   if (type === 'switch_hdmi') {
-    const requested = input.request.match(/HDMI\s*(\d+)/i)?.[1];
-    const label = input.screen?.labels.find(l => requested ? l.toUpperCase() === 'HDMI ' + requested : /hdmi/i.test(l));
-    if (!label) return { ...base, taskSummary: t.hdmi, decision: 'needs_clarification', clarification: { kind: 'screen_photo', question: t.hdmiQ, controlId: null } };
-    return {
-      ...base,
-      taskSummary: t.hdmi,
-      decision: 'ready',
-      steps: [step('s1', byRole('nav_ring') ?? 'nav_ring', label, t.nav(label)), step('s2', byRole('ok') ?? 'ok', label, t.ok(label))],
-    };
+    // The orchestrator owns the menu opener and selection checkpoints.
+    return { ...base, taskSummary: t.hdmi, decision: 'needs_clarification' };
   }
   return { ...base, taskSummary: type, decision: 'unsupported', unsupportedReason: type === 'wifi' ? t.wifi : t.other };
 }
@@ -123,7 +116,7 @@ export function createMockGuideProviders(failure?: () => MockFailure | undefined
     },
     async analyzeScreen() {
       maybeFail();
-      return { isTvScreen: true, labels: ['TV', 'HDMI 1', 'HDMI 2', 'AV'], summary: 'demo input list' };
+      return { isTvScreen: true, isInputList: true, selectedLabel: null, labels: ['TV', 'HDMI 1', 'HDMI 2', 'AV'], summary: 'demo input list' };
     },
     async plan(input) {
       const f = maybeFail();

@@ -65,6 +65,20 @@ describe('API', () => {
     expect((await bad.json()).error).toBe('bad_answers');
   });
 
+  it('keeps TV file errors in the input-list stage and ignores unsolicited TV files before it', async () => {
+    const app = setup();
+    const request = 'switch to HDMI 2';
+    const screenImage = new Blob([new Uint8Array(fakePng(80,100))], { type: 'image/png' });
+    const first = await post(app, '/api/guide', guideForm({ request, screenImage }));
+    expect(first.status).toBe(200);
+    const result = GuideResult.parse(await first.json());
+    expect(result.clarification?.controlId).toBe('input');
+    const answers = JSON.stringify({ hdmi: { photoId: result.hdmi!.photoId, listVisible: true } });
+    const wrong = await post(app, '/api/guide', guideForm({ request, answers, screenImage }));
+    expect(wrong.status).toBe(400);
+    expect(await wrong.json()).toMatchObject({ error: 'screen_image_dimensions', message: expect.stringContaining('TV photo') });
+  });
+
   it('returns a schema-valid guide', async () => {
     const res = await post(setup(), '/api/guide', guideForm());
     expect(res.status).toBe(200);

@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 it('routes photos and TV labels to the vision model and written instructions to the planner', async () => {
   const remote = { isRemote: true, photoQuality: 'good', controls: [], deviceCandidates: [] };
-  const screen = { isTvScreen: true, labels: ['HDMI 2'], summary: 'Input list' };
+  const screen = { isTvScreen: true, isInputList: true, selectedLabel: null, labels: ['HDMI 2'], summary: 'Input list' };
   const plan = { taskType: 'switch_hdmi', taskSummary: 'Switch inputs', decision: 'needs_clarification',
     clarification: { kind: 'confirm_button', question: 'Is SOURCE visible?', controlId: null },
     unsupportedReason: null, evidenceRefIds: [], steps: [] };
