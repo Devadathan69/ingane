@@ -1,0 +1,15 @@
+.stage-drawing { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; color: #637e67; }
+/* This inset follows the outer case of the licensed practice crop. */
+img.practice-cutout { clip-path: inset(.8% 4% .8% 4% round 6% / 2%); }
+.callout-anchor, .callout-level { position: absolute; width: 0; height: 0; pointer-events: none; }
+.callout-level { transform: rotate(var(--level-angle, 0deg)); transform-origin: 0 0; }
+.callout-body { position: absolute; bottom: 0; left: 0; display: flex; align-items: flex-start; color: #ebc35d; }
+.callout-anchor[data-side="hidden"] { visibility: hidden; }
+.callout-anchor[data-side="left"] .callout-body { left: auto; right: 0; flex-direction: row-reverse; }
+.callout-anchor[data-side="left"] .callout-leader { transform: scaleX(-1); }
+.callout-leader { display: block; width: clamp(26px, 8cqw, 55px); height: 28px; align-self: flex-end; }
+.callout-label { display: flex; align-items: center; gap: 6px; max-width: 138px; padding: 5px 9px;
+  transform: translateY(-50%); margin-bottom: -14px; font-size: .72rem; line-height: 1.3; letter-spacing: .055em;
+  font-weight: 750; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: #ffe5a3; background: #243c2e; border: 1px solid #8a824d; border-radius: 6px; }
+.callout-label::before { content: ''; width: 5px; height: 5px; background: #ffcf5c; border-radius: 50%; flex: none; }

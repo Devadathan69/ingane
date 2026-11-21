@@ -1,0 +1,39 @@
+.family { padding-bottom: 32px; }
+.family-form { border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+.family .field select, .family .field input:not([type=range]), .family .field textarea {
+  width: 100%; min-width: 0; min-height: 48px; font: inherit; font-weight: 400;
+  border: 1px solid var(--edge); border-radius: 11px; background: var(--card); color: var(--ink); padding: 10px 12px;
+}
+.family .field input[type=range] { width: 100%; min-height: 48px; }
+.family-step { min-width: 0; border: 1px solid var(--line); border-radius: 17px; background: var(--card); padding: 15px; }
+.family-step h2, .family h2 { margin: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
+.step-summary { font: inherit; text-align: start; width: 100%; padding: 8px 0; min-height: 48px; border: 0; background: none; color: var(--ink); cursor: pointer; overflow-wrap: anywhere; }
+.step-summary strong { display: inline-grid; place-items: center; min-width: 29px; height: 29px; margin-inline-end: 7px;
+  padding-inline: 5px; border-radius: 8px; background: var(--sage); color: var(--brand); }
+.step-summary[aria-expanded="true"] { font-weight: 650; }
+.step-summary[aria-expanded="true"] strong { background: var(--brand); color: var(--ring); }
+.family-order { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.family-order button { padding-inline: 9px; font-size: .9rem; }
+.family-photo { display: flex; align-items: center; gap: 12px; border: 1px dashed var(--edge); border-radius: 13px; padding: 12px; }
+.family-photo img { max-width: 24%; max-height: 140px; object-fit: contain; }
+.family-photo button { margin-top: 8px; }
+.family summary { min-height: 48px; padding: 10px 0; cursor: pointer; font-weight: 600; }
+.family a.btn { text-decoration: none; }
+.family-issues { padding-inline-start: 30px; }
+.family audio { width: 100%; max-width: 100%; }
+.family-leave { max-width: 716px; margin: 0 auto 24px; width: calc(100% - 2 * var(--gutter)); }
+.family-starts { display: grid; gap: 8px; }
+.draft-shelf > h2, .steps-heading { margin-top: 6px; }
+.empty-drafts { display: flex; align-items: center; gap: 12px; padding: 20px; margin: 0; border: 1px dashed var(--edge); border-radius: 16px; color: var(--muted); }
+.family-details { gap: 14px; }
+.step-fields { border-top: 1px solid var(--line); padding-top: 12px; }
+.family-order { border-top: 1px solid var(--line); padding-top: 6px; }
+.family-order .btn { border: 0; background: transparent; color: var(--muted); }
+.narration-panel { padding: 15px; border-radius: 13px; background: #edf1e6; }
+.share-panel { padding: clamp(16px,3vw,24px); }
+.family .field input[type=range] { accent-color: var(--brand); }
+@media (min-width: 660px) {
+  .family-starts { grid-template-columns: 1fr 1fr; }
+  .family-details { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .family-details > :is(h2,.family-photo,.warn-box), .family-details > label:has(textarea) { grid-column: 1 / -1; }
+}

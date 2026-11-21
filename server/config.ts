@@ -1,0 +1,61 @@
+import { randomBytes } from 'node:crypto';
+import type { SarvamAI } from 'sarvamai';
+import type { GuideLocale } from '../shared/guide';
+import { createMockGuideProviders, createMockSpeechProviders, type MockFailure } from './providers/mock';
+import { createOpenAIProviders } from './providers/openai';
+import { createSarvamProviders, type TtsConfig } from './providers/sarvam';
+import type { GuideProviders, SpeechProviders } from './providers/types';
+
+export interface ServerConfig {
+  port: number;
+  requestTimeoutMs: number;
+  narrationSecret: string;
+  guide: GuideProviders | null;
+  speech: SpeechProviders | null;
+  allowMockFailures: boolean;
+  trustProxy: boolean;
+}
+
+const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) ? Number(v) : d);
+
+function ttsChain(env: NodeJS.ProcessEnv, locale: 'ML' | 'EN'): TtsConfig[] {
+  // Fallback is the documented bulbul:v3 default speaker; replace once voices are verified by a listener.
+  const fallback: TtsConfig = { model: 'bulbul:v3', speaker: 'shubh' };
+  const primary: TtsConfig = {
+    model: (env[`SARVAM_TTS_MODEL_${locale}`] as SarvamAI.TextToSpeechModel) || fallback.model,
+    speaker: (env[`SARVAM_TTS_SPEAKER_${locale}`] as SarvamAI.TextToSpeechSpeaker) || fallback.speaker,
+  };
+  return primary.model === fallback.model && primary.speaker === fallback.speaker ? [primary] : [primary, fallback];
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, mockFailure?: () => MockFailure | undefined): ServerConfig {
+  const mode = env.INGANE_PROVIDER === 'mock' ? 'mock' : 'live';
+  let guide: GuideProviders | null = null;
+  let speech: SpeechProviders | null = null;
+  if (mode === 'mock') {
+    guide = createMockGuideProviders(mockFailure);
+    speech = createMockSpeechProviders(mockFailure);
+  } else {
+    if (env.OPENAI_API_KEY) {
+      guide = createOpenAIProviders({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL || 'gpt-5.5', timeoutMs: num(env.OPENAI_TIMEOUT_MS, 45_000) });
+    }
+    if (env.SARVAM_API_KEY) {
+      const tts: Record<GuideLocale, TtsConfig[]> = { ml: ttsChain(env, 'ML'), en: ttsChain(env, 'EN') };
+      speech = createSarvamProviders({
+        apiKey: env.SARVAM_API_KEY,
+        timeoutMs: num(env.SARVAM_TIMEOUT_MS, 20_000),
+        sttModel: (env.SARVAM_STT_MODEL as SarvamAI.SpeechToTextModel) || 'saaras:v4',
+        tts,
+      });
+    }
+  }
+  return {
+    port: num(env.PORT, 8787),
+    requestTimeoutMs: num(env.REQUEST_TIMEOUT_MS, 60_000),
+    narrationSecret: env.NARRATION_SECRET || randomBytes(32).toString('hex'),
+    guide,
+    speech,
+    allowMockFailures: mode === 'mock' && env.INGANE_MOCK_FAILURES === '1',
+    trustProxy: env.TRUST_PROXY === '1',
+  };
+}
