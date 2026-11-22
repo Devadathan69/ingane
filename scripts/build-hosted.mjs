@@ -24,10 +24,10 @@ for (const path of ['src', 'shared', 'server', 'index.html', 'tsconfig.json', 't
   copy(join(root, path), join(work, path));
 }
 // Both bundles must resolve the same licensed photo, control geometry and authored menu.
+// Keep the main server evidence registry in every build; hosted assets need no rule override.
 for (const [file, destination] of Object.entries({
   'devices.ts': 'src/data/devices.ts', 'guides.ts': 'src/data/guides.ts',
   'registry.ts': 'src/data/presets/registry.ts', 'demo-guides.ts': 'src/data/presets/demo-guides.ts',
-  'references.ts': 'server/references.ts',
 })) copy(join(root, 'hosting/practice', file), join(work, destination));
 copy(join(root, 'hosting/api.ts'), join(work, 'serverless/index.ts'));
 

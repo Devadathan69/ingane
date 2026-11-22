@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
+import { wifiCopy } from '../shared/wifi-copy';
 import { GuideResult, type ClarificationAnswers } from '../shared/guide';
 import { createApp } from './app';
 import { loadConfig } from './config';
@@ -64,6 +65,27 @@ describe('Wi-Fi guide through POST /api/guide', () => {
     expect(enable.task.summary).toBe('Turn on TV Wi-Fi');
     expect(enable.steps[0]).toMatchObject({ controlId: null, expectedState: 'The TV shows Wi-Fi is on.' });
     expect(enable.steps[0].instruction).toMatch(/already on, leave it on.*do not need to join/i);
+  });
+
+  it.each([
+    ['Help me turn on the Wi-Fi', 'en'],
+    ['Help with turning on the Wi-Fi', 'en'],
+    ['Switching on Wi-Fi', 'en'],
+    ['Wi-Fi on ആക്കൂ', 'ml'],
+    ['Wi-Fi on ചെയ്യൂ', 'ml'],
+  ] as const)('treats %s as enable-only without requiring a network connection', async (task, locale) => {
+    const { request } = testApi();
+    const t = wifiCopy(locale);
+    const result = await request(task, { labels: ['Wi-Fi'] }, {}, locale);
+    expect(result.task.summary).toBe(t.enableTitle);
+    expect(result.steps[0]).toMatchObject({ controlId: null, expectedState: t.enabled });
+  });
+
+  it('still requires connection when the request explicitly asks to turn Wi-Fi on and join', async () => {
+    const { request } = testApi();
+    const result = await request('Turn Wi-Fi on and connect to my network', { labels: ['Wi-Fi'] });
+    expect(result.task.summary).toBe('Connect the TV to Wi-Fi');
+    expect(result.steps[0].expectedState).toMatch(/connected/);
   });
 
   it('does not fabricate a menu on unknown TVs or re-echo sensitive screens', async () => {

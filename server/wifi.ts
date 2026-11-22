@@ -10,7 +10,7 @@ export const blockedWifi = (task: string) => wifiTerms.test(task) && (
 );
 export const directWifi = (task: string) => wifiTerms.test(task) && !blockedWifi(task);
 export const enableOnly = (task: string) => !/\b(?:connect(?:ion)?|join|set[ -]?up)\b|ബന്ധിപ്പി|कनेक्ट|जोड़|இணைக்க|ಸಂಪರ್ಕ|కనెక్ట్/u.test(task)
-  && /\b(?:turn on|switch on|enable|on aakk|on chey)\w*\b|ഓൺ|चालू|இயக்க|ಆನ್|ఆన్/iu.test(task);
+  && /\b(?:turn(?:ing)? on|switch(?:ing)? on|enable|enabling)\b|\bon\s+(?:aakk\w*|chey\w*|ആ[ക]\S*|ചെയ്യ\S*)|ഓൺ|चालू|இயக்க|ಆನ್|ఆన్/iu.test(task);
 
 const clean = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
 const levels = [
