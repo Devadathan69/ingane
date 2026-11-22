@@ -25,7 +25,7 @@ export function validateGuideResult(result: unknown, ctx: ValidationContext): st
   const r: Result = parsed.data;
   const errors: string[] = [];
   const script = nativeScript[r.locale];
-  const reply = r.clarification?.question ?? r.unsupportedReason;
+  const reply = r.clarification?.question ?? r.unsupportedReason ?? r.advice;
   if (script && reply && !script.test(reply)) errors.push(`reply must be in ${languages[r.locale].name} script`);
 
   const ids = new Set<string>();
@@ -44,6 +44,10 @@ export function validateGuideResult(result: unknown, ctx: ValidationContext): st
     if (!known) errors.push(`ref ${ref.id}: unknown reference`);
     else if (known.status !== 'approved') errors.push(`ref ${ref.id}: reference is not approved`);
   }
+
+  if (r.wifiAdvance && (r.task.type !== 'wifi' || r.status !== 'ready')) errors.push('Wi-Fi advance requires a ready Wi-Fi checkpoint');
+  if (r.status === 'advice' ? (!r.advice || r.clarification || r.unsupportedReason || r.evidenceRefs.length) : !!r.advice)
+    errors.push('plain advice cannot act as a runnable or cited guide');
 
   const isHdmi = r.task.type === 'switch_hdmi';
   const checkpoint = r.status === 'hdmi_checkpoint';

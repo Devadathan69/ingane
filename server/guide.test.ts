@@ -67,16 +67,73 @@ describe('buildGuide with the mock provider (demo data)', () => {
     expect(r.steps[0].controlId).toBe('home');
   });
 
-  it('wifi is unsupported and promises never to ask for the password', async () => {
-    const r = await run('connect wifi, password is hunter2');
-    expect(r.status).toBe('unsupported');
-    expect(r.unsupportedReason).toMatch(/never ask for your Wi-Fi password/);
+  it('asks for the current Wi-Fi menu rather than guessing or repeating credentials', async () => {
+    const base = createMockGuideProviders();
+    const analyzeRemote = vi.fn(base.analyzeRemote);
+    const plan = vi.fn(base.plan);
+    const r = await run('connect wifi, password is hunter2', { providers: { ...base, analyzeRemote, plan } });
+    expect(r).toMatchObject({ status: 'needs_clarification', task: { type: 'wifi' }, clarification: { kind: 'screen_photo', question: expect.stringMatching(/password, QR code or other credentials/) } });
+    expect(JSON.stringify(r)).not.toContain('hunter2');
+    expect(analyzeRemote.mock.calls[0][2]).not.toContain('hunter2');
+    expect(plan).not.toHaveBeenCalled();
     expectNoSteps(r);
   });
 
-  it('blurry photo or not a remote: asks for a clearer photo', async () => {
-    expect((await run('no sound', { failure: 'blurry' })).clarification?.kind).toBe('clearer_photo');
-    expect((await run('no sound', { failure: 'not_remote' })).clarification?.kind).toBe('clearer_photo');
+  it.each(['disable Wi-Fi', 'reset wifi', 'reveal Wi-Fi password', 'show me the wireless network password'])(
+    'does not turn an excluded request into Wi-Fi instructions (%s)', async request => {
+      const base = createMockGuideProviders();
+      const plan = vi.fn(base.plan);
+      const r = await run(request, { providers: { ...base, plan } });
+      expect(r.clarification).toMatchObject({ editRequest: true, question: expect.stringContaining('Do not share passwords') });
+      expect(plan).not.toHaveBeenCalled();
+      expectNoSteps(r);
+    });
+
+  it('gives static low-risk help or a rephrase path without arbitrary steps', async () => {
+    const r = await run('TV shows No signal on HDMI 2');
+    expect(r).toMatchObject({ status: 'advice', advice: expect.stringContaining('check that the connected device is on') });
+    expectNoSteps(r);
+    const unknown = await run('enter the service menu and factory reset the TV');
+    expect(unknown).toMatchObject({ status: 'needs_clarification', clarification: { kind: 'text', editRequest: true } });
+    expectNoSteps(unknown);
+  });
+
+  it('keeps reliably observed buttons when the photo is classified as blurry', async () => {
+    const guide = await run('no sound', { failure: 'blurry' });
+    expect(guide.status).toBe('ready');
+    expect(guide.steps.map(s => s.controlId)).toEqual(['mute', 'volume_up']);
+  });
+
+  it('asks to verify the specific uncertain button on a dark photo, then accepts a corrected hotspot', async () => {
+    const mock = createMockGuideProviders();
+    const providers: GuideProviders = { ...mock, analyzeRemote: async (image, signal) => {
+      const remote = await mock.analyzeRemote(image, signal);
+      return { ...remote, photoQuality: 'too_dark', controls: remote.controls.filter(c => c.role === 'home').map(c => ({ ...c, confidence: 'low' })) };
+    } };
+    const tentative = await run('go home', { providers });
+    expect(tentative.clarification).toMatchObject({ kind: 'confirm_button', controlId: 'home' });
+    expectNoSteps(tentative);
+    const box = { x: 0.35, y: 0.35, w: 0.08, h: 0.04 };
+    const corrected = await run('go home', { providers, answers: {
+      rejectedControlIds: ['home'], userControls: [{ id: 'home', label: 'Home', role: 'home', bbox: box }],
+    } });
+    expect(corrected.status).toBe('ready');
+    expect(corrected.steps[0].controlId).toBe('user_home');
+    expect(corrected.observedControls).toEqual([expect.objectContaining({ id: 'user_home', source: 'user', bbox: box })]);
+  });
+
+  it('asks for a clearer photo when poor input has no readable relevant control', async () => {
+    const mock = createMockGuideProviders();
+    const providers: GuideProviders = { ...mock, analyzeRemote: async (image, signal) => {
+      const remote = await mock.analyzeRemote(image, signal);
+      return { ...remote, photoQuality: 'blurry', controls: remote.controls.filter(c => c.role === 'input') };
+    } };
+    const poor = await run('go home', { providers });
+    expect(poor.clarification).toMatchObject({ kind: 'clearer_photo', photoIssue: 'blurry' });
+    expectNoSteps(poor);
+    const notRemote = await run('no sound', { failure: 'not_remote' });
+    expect(notRemote.clarification).toMatchObject({ kind: 'clearer_photo', photoIssue: 'not_remote' });
+    expectNoSteps(notRemote);
   });
 
   it('drops a control whose box falls outside the image instead of drawing it', async () => {

@@ -10,6 +10,8 @@ export interface NormalizedPhoto {
   height: number;
   /** Variance of the Laplacian on a small grayscale copy; low means blurry. */
   sharpness: number;
+  /** Local exposure warning only; it never changes or blocks the image. */
+  lowLight?: boolean;
 }
 
 export type PhotoErrorCode = 'not_image' | 'heic' | 'unreadable' | 'too_big' | 'too_small';
@@ -64,7 +66,19 @@ export function laplacianVariance(gray: Float32Array, w: number, h: number): num
   return sumSq / n - mean * mean;
 }
 
-function sharpnessOf(src: CanvasImageSource, w: number, h: number): number {
+export function looksTooDark(gray: ArrayLike<number>): boolean {
+  let darkPixels = 0;
+  let sum = 0;
+  for (let i = 0; i < gray.length; i++) {
+    const pixel = gray[i];
+    sum += pixel;
+    if (pixel < 40) darkPixels++;
+  }
+  // A predominantly dark frame, not just a dark remote against a bright background.
+  return gray.length > 0 && darkPixels / gray.length >= 0.8 && sum / gray.length < 52;
+}
+
+function qualityOf(src: CanvasImageSource, w: number, h: number): { sharpness: number; lowLight: boolean } {
   const scale = Math.min(1, 320 / Math.max(w, h));
   const sw = Math.max(3, Math.round(w * scale));
   const sh = Math.max(3, Math.round(h * scale));
@@ -72,12 +86,12 @@ function sharpnessOf(src: CanvasImageSource, w: number, h: number): number {
   c.width = sw;
   c.height = sh;
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return Infinity;
+  if (!ctx) return { sharpness: Infinity, lowLight: false };
   ctx.drawImage(src, 0, 0, sw, sh);
   const { data } = ctx.getImageData(0, 0, sw, sh);
   const gray = new Float32Array(sw * sh);
   for (let i = 0; i < gray.length; i++) gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
-  return laplacianVariance(gray, sw, sh);
+  return { sharpness: laplacianVariance(gray, sw, sh), lowLight: looksTooDark(gray) };
 }
 
 export async function normalizePhoto(file: File): Promise<NormalizedPhoto> {
@@ -92,16 +106,19 @@ export async function normalizePhoto(file: File): Promise<NormalizedPhoto> {
   const scale = Math.min(1, PHOTO_LIMITS.maxSide / Math.max(src.width, src.height));
   const width = Math.round(src.width * scale);
   const height = Math.round(src.height * scale);
-  if (Math.min(width, height) < PHOTO_LIMITS.minSide) throw new PhotoError('too_small');
-
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new PhotoError('unreadable');
-  ctx.drawImage(src, 0, 0, width, height);
-  if ('close' in src && typeof src.close === 'function') src.close();
+  try {
+    if (Math.min(width, height) < PHOTO_LIMITS.minSide) throw new PhotoError('too_small');
+    if (!ctx) throw new PhotoError('unreadable');
+    ctx.drawImage(src, 0, 0, width, height);
+  } finally {
+    if ('close' in src && typeof src.close === 'function') src.close();
+  }
   const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', PHOTO_LIMITS.quality));
   if (!blob) throw new PhotoError('unreadable');
-  return { blob, url: URL.createObjectURL(blob), width, height, sharpness: sharpnessOf(canvas, width, height) };
+  const quality = qualityOf(canvas, width, height);
+  return { blob, url: URL.createObjectURL(blob), width, height, ...quality };
 }

@@ -9,8 +9,11 @@ import {
   type GuideResult,
   type ObservedControl,
 } from '../shared/guide';
-import { buildHdmi, isMenuOpener } from './hdmi';
+import { buildHdmi } from './hdmi';
 import { HDMI_COPY } from '../shared/hdmi-copy';
+import { wifiCopy } from '../shared/wifi-copy';
+import { blockedWifi, directWifi, enableOnly, wifiSteps } from './wifi';
+import { troubleshooting } from './troubleshooting';
 import { MESSAGES } from './messages';
 import { approvedReferences, findReference, referenceApplies } from './references';
 import { ProviderError, type GuideProviders, type NormalizedImage, type PlannerOutput, type RemoteObservation, type ScreenObservation } from './providers/types';
@@ -104,12 +107,15 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
   const readScreen = screenImage ? async () => deps.providers.analyzeScreen(
     typeof screenImage === 'function' ? await screenImage() : screenImage, deps.signal) : undefined;
   const task = input.request.trim();
+  const wifiRequest = directWifi(task);
+  const wifiBlocked = blockedWifi(task);
+  const t = wifiCopy(locale);
   const imageHash = createHash('sha256').update(input.image.bytes).digest('hex');
   const taskHash = createHash('sha256').update(task).digest('hex');
   const key = imageHash + ':' + taskHash;
   let obs = deps.cache.get(key);
   if (!obs) {
-    obs = await deps.providers.analyzeRemote(input.image, deps.signal, task);
+    obs = await deps.providers.analyzeRemote(input.image, deps.signal, wifiRequest || wifiBlocked ? t.title : task);
     deps.cache.set(key, obs);
   }
 
@@ -126,6 +132,12 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
     ...base, status: 'needs_clarification', task, evidenceRefs: [], steps: [], clarification: { kind, question, controlId }, unsupportedReason: null,
   });
 
+  const rephrase = (question = t.clarify) => {
+    const result = clarify('text', question);
+    result.clarification!.editRequest = true;
+    return result;
+  };
+
   const poor = obs.photoQuality === 'blurry' || obs.photoQuality === 'too_dark';
   const photoIssue = (issue: 'not_remote' | 'blurry' | 'too_dark', question: string) => {
     const result = clarify('clearer_photo', question);
@@ -136,7 +148,7 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
   const poorPhoto = () => obs.photoQuality === 'too_dark'
     ? photoIssue('too_dark', HDMI_COPY[locale].dark) : photoIssue('blurry', HDMI_COPY[locale].blur);
   const observed = toControls(obs, {});
-  if (poor && !observed.some(c => c.confidence !== 'low' || isMenuOpener(c))) return poorPhoto();
+  if (poor && !observed.length) return poorPhoto();
 
   const photoId = createHmac('sha256', deps.secret).update(key + ':' + locale).digest('hex');
   const hdmi = () => {
@@ -164,7 +176,44 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
       readScreen, finish });
   };
   if (answers.hdmi?.photoId === photoId) return hdmi();
-  const userHelped = !!(answers.userControls?.length || answers.confirmedControlIds?.length);
+
+  const wifi = async (): Promise<GuideResult> => {
+    const enable = enableOnly(task);
+    const wifiTask = { type: 'wifi' as const, summary: enable ? t.enableTitle : t.title };
+    // Accept only controls located on this remote. Don't turn an arbitrary user-drawn mark
+    // or a text-only bypass into a network navigation button.
+    const allowed = new Set(observed.map(c => c.id));
+    const checked = { confirmedControlIds: answers.confirmedControlIds?.filter(id => allowed.has(id)), rejectedControlIds: answers.rejectedControlIds };
+    const grounded = toControls(obs, checked);
+    const needScreen = () => ({ ...clarify('screen_photo', t.photo, null, wifiTask), observedControls: grounded });
+    const screen = readScreen ? await readScreen() : undefined;
+    if (screen?.wifiSensitive) {
+      return { ...base, observedControls: grounded, status: 'advice', task: wifiTask, steps: [], evidenceRefs: [],
+        clarification: null, unsupportedReason: null, advice: t.photo };
+    }
+    if (!screen && answers.mismatch) return needScreen();
+    const next = wifiSteps(locale, grounded, screen, enable);
+    if (!next) return needScreen();
+    const needsCheck = next.check.find(c => needsConfirmation(c, grounded, checked));
+    if (needsCheck) {
+      return { ...clarify('confirm_button', msg.confirmButton(needsCheck.label), needsCheck.id, wifiTask), observedControls: grounded };
+    }
+    const evidenceRefs: EvidenceRef[] = next.label
+      ? [{ id: 'screen-photo', title: 'Photo of the user’s TV screen', kind: 'screen' }]
+      : [{ id: 'wifi-open-menu', title: findReference('wifi-open-menu')!.title, kind: 'generic' }];
+    const narrationTokens = Object.fromEntries(next.steps.map(s => [s.id, narrationToken(deps.secret, locale, s.narration)]));
+    const result: GuideResult = { ...base, observedControls: grounded, status: 'ready', task: wifiTask, evidenceRefs,
+      steps: next.steps, clarification: null, unsupportedReason: null, narrationTokens, wifiAdvance: next.advance ? true : undefined };
+    const errors = validateGuideResult(result, { screenLabels: next.label ? [next.label] : [] });
+    if (errors.length) throw new ProviderError('malformed', errors.join(', '));
+    return result;
+  };
+  if (wifiBlocked) return rephrase(t.blocked);
+  if (wifiRequest) return wifi();
+
+  const help = troubleshooting(locale, task);
+  if (help) return { ...base, status: 'advice', task: { type: 'other', summary: '' }, steps: [], evidenceRefs: [],
+    clarification: null, unsupportedReason: null, advice: help };
 
   let screenLabels: string[] = [];
 
@@ -186,8 +235,12 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
 
   const assemble = (plan: PlannerOutput): GuideResult => {
     const task = { type: plan.taskType, summary: plan.taskSummary.slice(0, 200) };
-    if (plan.taskType === 'wifi') return { ...base, status: 'unsupported', task, evidenceRefs: [], steps: [], clarification: null, unsupportedReason: msg.wifi };
-    if (plan.taskType === 'other' || plan.decision === 'unsupported') {
+    const hasTaskControl = plan.taskType === 'restore_sound'
+      ? controls.some(c => c.role === 'mute' || c.role === 'volume_up')
+      : plan.taskType === 'go_home' ? controls.some(c => c.role === 'home') : true;
+    if (poor && !hasTaskControl) return poorPhoto();
+    if (plan.taskType === 'other') return rephrase();
+    if (plan.decision === 'unsupported') {
       return { ...base, status: 'unsupported', task, evidenceRefs: [], steps: [], clarification: null, unsupportedReason: (plan.unsupportedReason || msg.other).slice(0, 400) };
     }
     if (plan.decision === 'needs_clarification') {
@@ -206,7 +259,7 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
 
     // Planner may only cite references the server offered for this device and task.
     for (const r of evidenceRefs) {
-      if (r.kind !== 'screen' && !refs.some((a) => a.id === r.id)) throw new ProviderError('malformed', `cited reference ${r.id} was not offered`);
+      if (r.kind !== 'screen' && !refs.some((a) => a.id === r.id && a.tasks.includes(plan.taskType))) throw new ProviderError('malformed', `cited reference ${r.id} was not offered`);
     }
 
     for (const s of plan.steps) {
@@ -231,14 +284,15 @@ export async function buildGuide(input: BuildInput, deps: BuildDeps): Promise<Gu
   for (let attempt = 0; attempt < 2; attempt++) {
     let plan = await deps.providers.plan(attempt ? { ...plannerInput, repairErrors: errors } : plannerInput, deps.signal);
     if (plan.taskType === 'switch_hdmi') return hdmi();
-    if (poor && !userHelped) return poorPhoto();
+    if (plan.taskType === 'wifi') return wifi();
     if (!attempt && readScreen && !answers.hdmi) {
       const screen = await readScreen();
-      if (screen.isTvScreen) {
+      if (screen.isTvScreen && !screen.wifiSensitive) {
         screenLabels = screen.labels.map(l => l.trim()).filter(Boolean).slice(0, 30);
         plannerInput.screen = { ...screen, labels: screenLabels };
         plan = await deps.providers.plan(plannerInput, deps.signal);
         if (plan.taskType === 'switch_hdmi') return hdmi();
+        if (plan.taskType === 'wifi') return wifi();
       }
     }
     let result: GuideResult;

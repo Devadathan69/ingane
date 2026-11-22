@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 it('routes photos and TV labels to the vision model and written instructions to the planner', async () => {
   const remote = { isRemote: true, photoQuality: 'good', controls: [], deviceCandidates: [] };
-  const screen = { isTvScreen: true, isInputList: true, selectedLabel: null, labels: ['HDMI 2'], summary: 'Input list' };
+  const screen = { isTvScreen: true, isInputList: true, selectedLabel: null, labels: ['HDMI 2'], summary: 'Input list', wifiSensitive: false };
   const plan = { taskType: 'switch_hdmi', taskSummary: 'Switch inputs', decision: 'needs_clarification',
     clarification: { kind: 'confirm_button', question: 'Is SOURCE visible?', controlId: null },
     unsupportedReason: null, evidenceRefIds: [], steps: [] };
@@ -27,7 +27,7 @@ it('routes photos and TV labels to the vision model and written instructions to 
   expect(models).toEqual(['gpt-5.5', 'gpt-5.5', 'gpt-6-luna']);
 });
 
-it.each([['gpt-5.5', 'low'], ['gpt-4.1', undefined]])('limits the photo check to the requested task on %s', async (model, effort) => {
+it.each([['gpt-6.2-astra', 'low'], ['gpt-5.5', 'low'], ['gpt-4.1', undefined]])('limits the photo check to the requested task on %s', async (model, effort) => {
   const task = 'ടിവിയിലെ മ്യൂട്ട് മാറ്റണം.';
   const observation = { isRemote: true, photoQuality: 'good', controls: [], deviceCandidates: [] };
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {

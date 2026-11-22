@@ -61,6 +61,7 @@ export type GuideStep = z.infer<typeof GuideStep>;
 export const CLARIFICATION_KINDS = ['tv_model', 'clearer_photo', 'screen_photo', 'confirm_button', 'text'] as const;
 export const Clarification = z.object({
   kind: z.enum([...CLARIFICATION_KINDS, 'mark_source', 'input_list', 'choose_input']),
+  editRequest: z.literal(true).optional(),
   photoIssue: z.enum(['not_remote', 'blurry', 'too_dark']).optional(),
   question: z.string().min(1).max(300),
   controlId: z.string().nullable(),
@@ -78,7 +79,7 @@ export const HdmiContinuation = z.object({
 });
 
 export const GuideResult = z.object({
-  status: z.enum(['ready', 'hdmi_checkpoint', 'needs_clarification', 'unsupported']),
+  status: z.enum(['ready', 'hdmi_checkpoint', 'needs_clarification', 'unsupported', 'advice']),
   task: z.object({ type: TaskType, summary: z.string().max(200) }),
   locale: LOCALE,
   deviceCandidates: z.array(DeviceCandidate).max(5),
@@ -87,6 +88,9 @@ export const GuideResult = z.object({
   steps: z.array(GuideStep).max(12),
   clarification: Clarification.nullable(),
   hdmi: HdmiContinuation.optional(),
+  /** Wi-Fi checkpoints must be confirmed before requesting a fresh menu photo. */
+  wifiAdvance: z.literal(true).optional(),
+  advice: z.string().min(1).max(400).optional(),
   unsupportedReason: z.string().max(400).nullable(),
   /** HMAC tokens that let /api/speak narrate only server-issued step text. Keyed by step id. */
   narrationTokens: z.record(z.string(), z.string()),

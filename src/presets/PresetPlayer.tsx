@@ -57,6 +57,7 @@ export function PresetPlayer({ entry, guide, scope, port, locale, appLocale = lo
     image={{ ...remote.asset, alt: remote.asset.alt[locale], frameWidth: 'min(68%, 260px)' }}
     locale={locale} contentLocale={locale} t={t}
     controls={Object.values(remote.controls).map(c => c.hotspot)}
+    autoNarration={scope === 'device-verified' && hasSpeech}
     speak={hasSpeech ? step => speakPresetUrl(locale, { version: REGISTRY_VERSION, scope, guideId: guide.id, stepId: step.id, port }) : undefined}
     mismatchExtra={() => <>
       <button className="btn btn-secondary" type="button" onClick={onRecheck}>{s.recheck}</button>

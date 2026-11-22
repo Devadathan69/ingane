@@ -21,6 +21,11 @@ export interface Reference {
 
 export const REFERENCES: Reference[] = [
   {
+    id: 'wifi-open-menu', title: 'Settings or Home button visible on this remote',
+    kind: 'generic', status: 'approved', tasks: ['wifi'], requiresAnyRole: ['settings', 'home'],
+    content: 'A dedicated Settings or Home control can open its own menu. Exact network menus vary by TV.',
+  },
+  {
     id: 'generic-sound',
     title: 'Restoring sound with clearly labelled mute / volume buttons',
     kind: 'generic',

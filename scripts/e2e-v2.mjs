@@ -186,7 +186,12 @@ for (const width of [360, 430]) {
   await page.getByRole('checkbox').check();
   await page.getByRole('textbox').fill('set up wifi');
   await page.getByRole('button', { name: 'Make my guide' }).click();
-  check('wifi → unsupported, no password request', /never ask for your Wi-Fi password/.test(await page.getByRole('alert').textContent()));
+  const wifi = page.getByRole('button', { name: 'Take a photo of my TV screen' });
+  await wifi.waitFor();
+  check('wifi on an unknown remote asks for current menu, not a password',
+    guide.task.type === 'wifi' && guide.status === 'needs_clarification' &&
+    guide.clarification?.kind === 'screen_photo' && /do not send.*password/i.test(guide.clarification.question) &&
+    !await page.getByTestId('hotspot').count());
   await ctx.close();
 }
 

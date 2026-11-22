@@ -38,7 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, mockFailure?: (
     speech = createMockSpeechProviders(mockFailure);
   } else {
     if (env.OPENAI_API_KEY) {
-      const model = env.OPENAI_MODEL || 'gpt-6-luna';
+      const model = env.OPENAI_MODEL || 'gpt-6.2-astra';
       guide = createOpenAIProviders({
         apiKey: env.OPENAI_API_KEY, model,
         visionModel: env.OPENAI_VISION_MODEL || (model === 'gpt-6-luna' ? 'gpt-5.5' : model),

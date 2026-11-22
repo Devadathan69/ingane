@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { Hotspot } from '../data';
 import type { GuideLanguage } from '../../shared/languages';
 import type { Strings } from '../i18n';
 import { progressReducer, START } from './progress';
 import { RemoteImage, useReducedMotion } from './RemoteImage';
 import { Icon } from '../ui/Icon';
+import { useStepNarration } from './useStepNarration';
+import { narrationCopy } from './narrationCopy';
 import './walkthrough.css';
 
 /** A step already localized for display. Shared by V1 fixtures and V2 generated guides. */
@@ -41,6 +43,8 @@ export interface StepPlayerProps {
   onConfirmLast?: () => void;
   /** On-demand narration (V2). Returns a playable URL; callers cache per session. */
   speak?: (step: PlayerStep) => Promise<string>;
+  /** Live guidance speaks each new step by default; shared recordings stay tap-to-play. */
+  autoNarration?: boolean;
   /** Extra recovery actions shown on mismatch (V2: photo of the TV screen). */
   mismatchExtra?: (step: PlayerStep) => ReactNode;
   footer?: ReactNode;
@@ -50,7 +54,7 @@ export interface StepPlayerProps {
 
 const BADGE_ICON = { sample: '⚠', verified: '✓', demo: '⚠', live: 'ⓘ' } as const;
 
-export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, steps, image, locale, contentLocale, t, labels, onConfirmLast, speak, mismatchExtra, footer, legacy = false, controls }: StepPlayerProps) {
+export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, steps, image, locale, contentLocale, t, labels, onConfirmLast, speak, autoNarration = false, mismatchExtra, footer, legacy = false, controls }: StepPlayerProps) {
   const total = steps.length;
   const reducer = useMemo(() => progressReducer(total), [total]);
   const [state, dispatch] = useReducer(reducer, START);
@@ -64,19 +68,18 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
   const [targetReady, setTargetReady] = useState(false);
   const [replayCount, setReplayCount] = useState(0);
   const reduce = useReducedMotion();
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const playback = useRef(0);
-  const [audioState, setAudioState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'failed'>('idle');
-
-  const stopAudio = () => {
-    playback.current += 1;
-    if (audio.current) {
-      audio.current.onended = null;
-      audio.current.onerror = null;
-      audio.current.pause();
-    }
-    audio.current = null;
-  };
+  const canPlay = !!(speak || step.audioUrl || step.loadAudio);
+  const narrationKey = JSON.stringify([image.src, contentLocale ?? locale, step.id, step.instruction, step.audioUrl]);
+  const narration = useStepNarration({
+    stepKey: narrationKey,
+    resetKey: focusKey,
+    active: canPlay && !state.done && (!autoNarration || !state.mismatch),
+    auto: autoNarration,
+    url: step.audioUrl,
+    load: step.loadAudio ?? (speak && (() => speak(step))),
+  });
+  const audioState = narration.state;
+  const voiceCopy = narrationCopy[locale];
 
   const announcement = state.done
     ? `${t.doneTitle} ${t.doneBody}`
@@ -85,8 +88,6 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
       : `${t.stepOf(state.index + 1, total)}. ${step.button ? `${t.press}: ${step.button}` : step.instruction}`;
 
   useLayoutEffect(() => {
-    stopAudio();
-    setAudioState('idle');
     if (state.done) introduced.current = true;
     if (!legacy && !state.done && !state.mismatch) document.scrollingElement?.scrollTo?.({ top: 0, behavior: 'instant' });
     if (lastFocus.current === focusKey) return;
@@ -94,27 +95,6 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
     if (!legacy && state.mismatch) recoveryHeading.current?.focus();
     else heading.current?.focus({ preventScroll: !legacy && !state.done });
   }, [focusKey, state.done, state.mismatch, legacy]);
-
-  useEffect(() => stopAudio, []);
-
-  const canPlay = !!(speak || step?.audioUrl || step?.loadAudio);
-  const play = async () => {
-    stopAudio();
-    setAudioState('loading');
-    const request = playback.current;
-    try {
-      const url = step.audioUrl ?? (await (step.loadAudio ? step.loadAudio() : speak!(step)));
-      if (request !== playback.current) return;
-      const a = new Audio(url);
-      audio.current = a;
-      a.onended = () => setAudioState('played');
-      a.onerror = () => setAudioState('failed');
-      await a.play();
-      if (request === playback.current) setAudioState('playing');
-    } catch {
-      if (request === playback.current) setAudioState('failed');
-    }
-  };
 
   const progress = (
     <div className="progress" aria-hidden="true">
@@ -147,12 +127,18 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
     )
   );
   const listen = (
-    canPlay && (
-      <div className="audio-row">
-        <button type="button" className="btn btn-secondary btn-listen" onClick={play} disabled={audioState === 'loading'}>
-          <span aria-hidden="true">{audioState === 'played' || audioState === 'playing' ? '↻' : '▶'}</span>{' '}
-          {audioState === 'loading' ? t.audioLoading : audioState === 'played' || audioState === 'playing' ? t.replay : t.play}
-        </button>
+    canPlay && (!autoNarration || !state.mismatch) && (
+      <div className={autoNarration ? 'audio-row audio-row-auto' : 'audio-row'}>
+        {(!autoNarration || !narration.muted) &&
+          <button type="button" className="btn btn-secondary btn-listen" onClick={narration.play} disabled={audioState === 'loading'}>
+            <span aria-hidden="true">{audioState === 'played' || audioState === 'playing' ? '↻' : '▶'}</span>{' '}
+            {audioState === 'loading' ? t.audioLoading : audioState === 'played' || audioState === 'playing' ? t.replay :
+              autoNarration && audioState === 'blocked' ? voiceCopy.blocked : t.play}
+          </button>}
+        {autoNarration &&
+          <button type="button" className="btn btn-secondary btn-voice-toggle" onClick={narration.toggleMute}>
+            {narration.muted ? voiceCopy.unmute : voiceCopy.mute}
+          </button>}
         {audioState === 'failed' && <p className="audio-failed" role="status">{t.audioFailed}</p>}
       </div>
     )
@@ -207,7 +193,10 @@ export function StepPlayer({ title, subtitle, subtitleInDetails, badge, before, 
       </div>
     ) : (
       <div className="answer">
-        <button type="button" className="btn btn-yes" lang={step.confirmation ? contentLocale : undefined} onClick={() => onConfirmLast && state.index === total - 1 ? onConfirmLast() : dispatch({ type: 'confirm' })}>
+        <button type="button" className="btn btn-yes" lang={step.confirmation ? contentLocale : undefined} onClick={() => {
+          if (onConfirmLast && state.index === total - 1) { narration.stop(); onConfirmLast(); }
+          else dispatch({ type: 'confirm' });
+        }}>
           {legacy && <span aria-hidden="true">✓</span>} {step.confirmation ?? labels?.yes ?? t.yes}
           {!legacy && <Icon name="arrow" />}
         </button>

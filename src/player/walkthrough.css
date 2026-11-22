@@ -126,3 +126,11 @@
   .stage-tools { padding-inline: 20px; }
   .walkthrough > .wide { width: auto; margin-right: 8px; }
 }
+
+.walk-paper .audio-row-auto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.walk-paper .audio-row-auto .audio-failed { flex-basis: 100%; }

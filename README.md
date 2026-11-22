@@ -26,6 +26,10 @@ To use your own remote, take a photo or choose one from the gallery. Review it, 
 
 After you confirm the TV’s input list is open, type the exact labels you see or review and send a TV-screen photo. Choose the port your device is connected to when Ingane asks. The walkthrough finishes when you confirm the device’s picture appeared. You can copy a complete photo guide into Family Guides or start a family guide by marking buttons on a photo.
 
+A blur or lighting warning is not an automatic rejection: continue if the relevant controls are visible, or retake the photo or confirm the actual button if Ingane is unsure. When Sarvam narration is available, new live photo guides read each step aloud by default. The browser may require a first tap to allow playback. The reader can mute or replay narration, and progress always waits for confirmation. Practice and shared Family Guides still play audio on tap.
+
+For Wi-Fi, ask to turn Wi-Fi on or connect the TV. Ingane uses a recognized Settings/Home control and the visible TV menu labels to guide one screen at a time; it asks for a menu photo rather than guessing a path when evidence is missing. Enter passwords only on the TV and never photograph a password, code or QR screen. Some other requests get basic troubleshooting or a clarification instead of an exact button sequence.
+
 ## Languages and coverage
 
 The home screen, brand guides, photo flow and family editor are available in **Malayalam, English, Hindi, Tamil, Kannada and Telugu**. Choose a language from the menu at the top. Photo and family guides can use a different language from the interface. The two photographed practice walkthroughs have authored steps and narration in Malayalam and English. Printed labels such as **SOURCE** and **HDMI 2** stay visible.
@@ -64,8 +68,8 @@ For live service, set `INGANE_PROVIDER=live` and configure only the features you
 | Setting | What it enables |
 | --- | --- |
 | `OPENAI_API_KEY` | Photo guides through the OpenAI Responses API. The project needs credit and access to the selected models. |
-| `OPENAI_MODEL` | Writes the guide steps. Defaults to `gpt-6-luna`. |
-| `OPENAI_VISION_MODEL` | Locates remote buttons and reads TV screen labels. The standard configuration uses `gpt-5.5`. |
+| `OPENAI_MODEL` | Writes the guide steps. Defaults to `gpt-6.2-astra`. Existing environment settings still override it. |
+| `OPENAI_VISION_MODEL` | Locates remote buttons and reads TV screen labels. Defaults to the planner model (except legacy Luna configurations, which keep their GPT-5.5 vision fallback). |
 | `SARVAM_API_KEY` | Spoken requests and read-aloud through the official Sarvam AI SDK. Defaults are `saaras:v4` for transcription and `bulbul:v3` for narration. Text works independently. |
 | `NARRATION_SECRET` | A stable random server secret for narration, photo-guide continuations and hosted authentication. Use the same value across server instances. |
 | `INGANE_FAMILY_DATABASE_URL` | Hosted private PostgreSQL storage for passkeys, shared snapshots, photos and audio. |

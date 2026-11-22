@@ -238,6 +238,8 @@ describe('GuideMe flow', () => {
     const attempts: FormData[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes('health')) return json({ ok: true, guide: true, speech: true, demo: false });
+      if (url.endsWith('api/speak')) return json({ error: 'unavailable' }, 503);
+      expect(url.endsWith('api/guide')).toBe(true);
       attempts.push(init?.body as FormData);
       if (attempts.length > 1) return json(result());
       return source === 'service' ? json({ error: 'timeout' }, 504) : new Response('Timed out', { status: 504 });

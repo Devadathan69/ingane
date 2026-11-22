@@ -29,6 +29,8 @@ export interface ScreenObservation {
   /** Exact on-screen text labels as printed, e.g. "HDMI 1". */
   labels: string[];
   summary: string;
+  /** Credentials, pairing codes, or keyboard for entering a network password. */
+  wifiSensitive?: boolean;
 }
 
 export interface PlannerStep {
